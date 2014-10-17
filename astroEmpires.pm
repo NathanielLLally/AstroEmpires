@@ -11,7 +11,7 @@
 
   login to an astro empires server and determines fleet information based on areas a player can scout
 
-  ae::Ship
+  ae::Ships
     facilitates determining fleet breakdown by size of individual ships
 
   ae::Fleet
@@ -37,48 +37,58 @@ print Dumper($ae->fleet);
 package ae::ServerTime;
 use Moose;
 use Moose::Util::TypeConstraints;
+use DateTime::Format::DateManip;
 use Date::Manip;
 
 subtype 'ServerTime'
-  => as 'Str';
+  => as 'DateTime';
 
 coerce 'ServerTime'
   => from 'Str'
-  => via { 
-    ParseDate("$_ CET");
+  => via {
+    DateTime::Format::DateManip->parse_datetime(ParseDate($_));
   };
 
-subtype 'HeaderTime'
-  => as 'Str';
+subtype 'LocalTime'
+  => as 'DateTime';
 
-coerce 'HeaderTime'
+coerce 'LocalTime'
   => from 'Str'
   => via { 
-    ParseDate($_);
+    DateTime::Format::DateManip->parse_datetime(ParseDate($_));
   };
 
-sub setServerTime
+coerce 'LocalTime'
+  => from 'ServerTime'
+  => via {
+    $_->clone->set_time_zone('America/New_York');
+  };
+
+sub setLocalTime
 {
   my $s = shift;
-  $s->serverTime($s->headerTime);
+#  $s->localTime($s->serverTime);
+  $s->localTime("now");
 }
 
-has 'headerTime' => (isa => 'HeaderTime', is => 'rw', 
-    coerce => 1, trigger => \&setServerTime);
-
 has 'serverTime' => (isa => 'ServerTime', is => 'rw', 
-    coerce => 1, predicate => 'hasServerTime');
+    coerce => 1, predicate => 'hasServerTime', trigger => \&setLocalTime);
 
-has 'localTime' => (isa => 'HeaderTime', is => 'rw', coerce => 1);
+has 'localTime' => (isa => 'LocalTime', is => 'rw', coerce => 1);
+
+sub localTimePretty
+{
+  $_[0]->localTime->strftime("%Y-%m-%d %I:%M:%S %p");
+}
 
 no Moose;
 __PACKAGE__->meta->make_immutable;
 
-package ae::Ship;
+package ae::Ships;
 use Moose;
 use Moose::Util::TypeConstraints;
 
-our %ships = (
+our %typeSizes = (
     'Fighters' => 5,
     'Bombers' => 10,
     'Heavy Bombers' => 30,
@@ -89,7 +99,7 @@ our %ships = (
     'Frigate' => 80,
     'Ion Frigate' => 120,
     'Scout Ship' => 40,
-    'Outpost Ship' => 3,
+    'Outpost Ship' => 100,
     'Cruiser' => 200,
     'Carrier' => 400,
     'Heavy Cruiser' => 500,
@@ -103,14 +113,22 @@ our %ships = (
 
 subtype 'ShipType'
   => as 'Str'
-  => where { exists $ae::Ship::ships{$_} };
+  => where { exists $typeSizes{$_} };
 
-has 'type' => (isa => 'ShipType', is => 'rw', required => 1);
-has 'number' => (isa => 'Int', is => 'rw', required => 1);
-has 'size' => (isa => 'Int', is => 'rw', lazy => 1, default => sub {
+has 'shipType' => (isa => 'ShipType', is => 'rw', required => 1);
+has 'count' => (isa => 'Int', is => 'rw', lazy => 1, default => 1);
+
+sub size {
   my $s = shift;
-  $ae::Ship::ships{$s->type} * $s->number;
-});
+  $typeSizes{$s->shipType} * $s->count;
+}
+
+#  class method accessor for exists typeSizes{$}
+#
+sub isShipType
+{
+  return (exists $typeSizes{$_[0]});
+}
 
 no Moose;
 __PACKAGE__->meta->make_immutable;
@@ -123,8 +141,8 @@ use Moose::Util::TypeConstraints;
 extends 'ae::ServerTime';
 
 subtype 'Ships'
-  => as 'ae::Ship'
-  => where { $_->isa('ae::Ship') };
+  => as 'ae::Ships'
+  => where { $_->isa('ae::Ships') };
 
 coerce 'Ships'
   => from 'Str'
@@ -132,7 +150,7 @@ coerce 'Ships'
     if ($_ =~ /(\w+\s?\w*?)\s+([\d,]+)/) {
       my $n = $2;
       $n =~ s/,//g;
-      ae::Ship->new(type => $1, number => $n);
+      ae::Ships->new(shipType => $1, count => $n);
     }
   };
 
@@ -144,17 +162,31 @@ subtype 'SizeComma'
   => as 'Str'
   => where { $_ =~ /^[\d,]+$/ };
 
-has 'name' => (isa => 'Str', is => 'rw');
+has 'name' => (isa => 'Str', is => 'rw', required => 1);
 has 'id' => (isa => 'Int', is => 'rw', required => 1);
-has 'loc' => (isa => 'Location', is => 'rw', required => 1);
-has 'destination' => (isa => 'Location', is => 'rw', predicate => 'hasDestination' );
-has 'arrival' => (isa => 'HeaderTime', is => 'rw');
-has 'size' => (isa => 'SizeComma', is => 'rw', lazy_build => 1);
+has 'location' => (isa => 'Location', is => 'rw', lazy => 1, default => sub {});
+has 'destination' => (isa => 'Location', is => 'rw', predicate => 'hasDestination', lazy => 1, default => sub {} );
+has 'arrival' => (isa => 'DateTime', is => 'rw', lazy => 1, default => sub {});
+has 'size' => (isa => 'Int', is => 'rw', lazy => 1, default => 0);
+has 'comment' => (isa => 'Str', is => 'rw', lazy => 1, default => '');
 
-has 'ships' => (
+has 'ship' => (
   isa => 'HashRef[Ships]',
   is => 'rw',
-  coerce => 1,
+  );
+
+has 'ship' => (
+  traits  => ['Hash'],
+  is      => 'rw',
+  isa     => 'HashRef[ae::Ships]',
+  default => sub { {} },
+  handles => {
+    ship_type_count  => 'count',
+    ship_types     => 'keys',
+    ships        => 'values',
+    get_ship     => 'get',
+    set_ship     => 'set',
+  },
   );
 
 no Moose;
@@ -173,7 +205,13 @@ use HTML::TreeBuilder;
 use Tie::IxHash;
 use Symbol qw/geniosym/;
 use Date::Manip;
+use Carp;
+use Try::Tiny;
+use Storable;
+use List::Util qw(first max maxstr min minstr reduce shuffle sum);
+use XML::Simple;
 use Data::Dumper;
+
 
 use Exporter;
 our @ISA = 'Exporter';
@@ -226,28 +264,70 @@ has 'ua' => (isa => 'Object', is => 'rw',
 
 has 'res' => (isa => 'Object', is => 'rw');
 
-has 'fleet' => (isa => 'HashRef[ae::Fleet]', is => 'rw',
-  default => sub { {} } ,
+has 'fleet' => (
+  traits  => ['Hash'],
+  is      => 'rw',
+  isa     => 'HashRef[ae::Fleet]',
+  default => sub { {} },
+  handles => {
+    fleets_count  => 'count',
+    fleet_ids     => 'keys',
+    fleets        => 'values',
+    get_fleet     => 'get',
+    set_fleet     => 'set',
+  },
   );
 
-#sub fleet
-#{
-#  my ($s, @fleet) = @_;
-#}
+sub printFleetSummary
+{
+  my $s = shift;
+  my %totals;
+  print "Fleet Summary:\n";
+  printf "id\tname\tsize\tlocation\tdestination\tarrival\n";
+  foreach my $fleet ($s->fleets) {
+    printf "%s\t%s\t\t\t%s\t%s\t%s\n",
+      $fleet->id, $fleet->name, $fleet->size,
+      ($fleet->hasDestination)?$fleet->destination:'',
+      ($fleet->hasDestination)?$fleet->arrival->strftime("%Y-%m-%d %I:%M:%S %p"):'';
+    foreach my $ship ($fleet->ships) {
+
+      $totals{$ship->shipType}->{count} += $ship->count;
+      $totals{$ship->shipType}->{size} += $ship->size;
+      $totals{"{All Ships}"}->{size} += $ship->size;
+      $totals{"{All Ships}"}->{count} += $ship->count;
+      printf "\t%s\t%u\t%u\n", $ship->shipType, $ship->count, $ship->size;
+    }
+    print "\n";
+  }
+
+  print "\nTotals:\n";
+
+  foreach my $st (sort keys %totals) {
+    printf "\t%s\t%u\t%u\n", $st, $totals{$st}->{count}, $totals{$st}->{size};
+  }
+}
 
 {
   my $i;
 sub sendRequest
 {
-  my ($s, $req) = @_;
-  open (OUT, ">out".++$i.".html") || die "cant open out";
+  my ($s, $req, $bypassAuthCheck) = @_;
+
+  croak "invalid session" unless ($s->isSessionValid or defined $bypassAuthCheck);
+
+  my $outfile = $req->uri->path;
+  $outfile =~ s/\///g;
+  open (OUT, ">".++$i."_$outfile") || die "cant open out";
 
   $s->ua()->cookie_jar()->add_cookie_header($req);
-  print OUT "request:\n".$req->{_headers}->as_string();
+#  print OUT "request:\n".$req->{_headers}->as_string();
 
   $s->res($s->ua()->request($req));
 
   if ($s->res()->is_success) {
+    #
+    #  extrapolate session header and explicitly set
+    #
     my $sesh = $s->res()->header('Set-Cookie');
     if (defined $sesh and $sesh =~ /HttpOnly/i) {
       $sesh =~ s/;? ?HttpOnly//;
@@ -263,12 +343,13 @@ sub sendRequest
       #$s->ua()->cookie_jar()->extract_cookies($s->res());
 
     }
-    $s->headerTime($s->res->header('Date'));
-    $s->headerTime($s->res->header('Client-Date'));
-    print UnixDate($s->serverTime, "It is now %T on %b %e, %Y.");
+    $s->serverTime($s->res->header('Date'));
+#    $s->serverTime($s->res->header('Client-Date'));
+#    print UnixDate($s->localTime, "localtime %Y-%m-%d %T %i:%M:%S %p");
 
-    print OUT "\nresponse:\n".$s->res()->{_headers}->as_string();
+#    print OUT "\nresponse:\n".$s->res()->{_headers}->as_string();
     print OUT $s->res()->decoded_content;
+
   } elsif ($s->res()->code == 302) {
     print "redirect to ".$s->res()->request()->uri."\n";
     print OUT $s->res()->decoded_content;
@@ -277,8 +358,84 @@ sub sendRequest
     print $s->res()->status_line . "\n";
   }
   close(OUT);
-
+  return $s->res()->is_success;
 }
+}
+
+sub getStars
+{
+  my $s = shift;
+  my $galaxy = shift;
+  my $file = ".aeStars.$galaxy.sto";
+  my $num = $galaxy;
+  $num =~ s/.*?(\d+)/$1/;
+  my $stars;
+  try {
+    $stars = retrieve($file);
+  };
+
+  
+  my ($uri, $req, $tree) = ($s->base, undef, undef); 
+  $uri->path( "galaxies_xml/Bravo-$num.xml" );
+  $req = HTTP::Request->new('GET', $uri);
+  $s->sendRequest($req);
+  my $xml = XMLin($s->res->decoded_content);
+
+  foreach my $region (keys %{ $xml->{region} }) {
+    foreach my $star (split(/;/, $xml->{region}->{$region}->{stars})) {
+      if ($star =~ /(\d+)\w/) {
+        push @$stars, "$galaxy:$region:$1";
+      }
+    }
+  }
+
+  my $sector = shift @$stars;
+  $sector = "B39:86:33";
+  $uri->path_query( "map.aspx?loc=$sector" );
+  $req = HTTP::Request->new('GET', $uri);
+  $s->sendRequest($req);
+}
+
+sub getFleetDetail
+{
+  my $s = shift;
+  my $Pid = shift;
+  my ($uri, $req, $tree) = ($s->base, undef, undef); 
+  $uri->path_query( "fleet.aspx?fleet=$Pid" );
+  $req = HTTP::Request->new('GET', $uri);
+  $s->sendRequest($req);
+
+  $tree = HTML::TreeBuilder->new_from_content( $s->res()->decoded_content() );
+
+  my $section = $tree->look_down('id', 'fleet_overview');
+  croak "no fleet overview from ".$uri->as_string unless (defined $section);
+
+  my $fleetSize = 0;
+  if ($section->as_text =~ /Fleet Size:\s?(\d+)/) {
+    $fleetSize = $1;
+  }
+
+  #  Overview
+  #     Units
+  #     ShipType  Count
+  #     Fleet Size: #
+  #
+  my @elTR = $section->look_down('_tag', 'tr');
+  foreach my $row (@elTR) {
+    my ($shipType, $count) = (undef, 0);
+    my @elTD = $row->look_down('_tag', 'td');
+    foreach my $elTD (@elTD) {
+      if (ae::Ships::isShipType($elTD->as_text)) {
+        $shipType = $elTD->as_text;
+      } elsif (defined $shipType and $elTD->as_text =~ /(\d+)/) {
+        $s->get_fleet($Pid)->set_ship(
+          $shipType => ae::Ships->new(
+            shipType => $shipType,
+            count => $1
+            ));
+      }
+    }
+  }
 }
 
 sub getFleet
@@ -287,64 +444,71 @@ sub getFleet
   my ($uri, $req, $tree) = ($s->base, undef, undef); 
   $uri->path( 'fleet.aspx' );
   $req = HTTP::Request->new('GET', $uri);
-  sendRequest($s,$req);
+  $s->sendRequest($req);
 
-  open(FLEET, ">fleet.out");
+  $tree = HTML::TreeBuilder->new_from_content( $s->res()->decoded_content() );
 
-  $tree = HTML::TreeBuilder->new_from_content( $s->res()->content() );
+  my $section = $tree->look_down('id', 'fleets-list');
+  croak "no section with id=fleets-list in ".$uri->as_string unless (defined $section);
 
-  my $table = $tree->look_down('id', 'fleets-list');
-  my @tds = $table->look_down('_tag', 'td');
+  my @elTR = $section->look_down('_tag', 'tr');
 
-  my ($size, $id, $name, $loc, $dest, $time);
-  map {
-    if ($_->attr('id') =~ /time/) {
-      $time = $_->attr('title');
-      print FLEET "time: $time\n";
-    } else {
-      if ($_->as_text =~ /^[\d\,]+$/) {
-        $size = $_->as_text;
-        eval {
-          my $fleet = ae::Fleet->new(
-              name => $name, loc => $loc, id => $id, size => $size,
-              destination => $dest, 
-              );
+TR:  foreach my $elTR (@elTR) {
+       my ($fleet, $elA, $itTD) = ((undef) x 3);
+       my @elTD = $elTR->look_down('_tag', 'td');
 
-          if ($time) {
-            $fleet->arrival( DateCalc($s->serverTime, "+$time seconds") );
-          }
-          $s->fleet({%{$s->fleet}, $name => $fleet });
-          ($name, $loc, $id, $size, $dest, $time) = ((undef) x 6);
-        };
-        print $@ if $@;
-      }
-    }
+#Fleet
+       $itTD = shift @elTD;
+       next TR unless (defined $itTD);
+       $elA = $itTD->look_down('_tag', 'a');
+       if (defined $elA and $elA->attr('href') =~ /fleet\.aspx\?fleet=(\d+)$/) {
+         $fleet = ae::Fleet->new( name => $elA->as_text, id => $1 );
+       }
+       next TR unless (defined $fleet);
 
-    my @hrefs = $_->look_down('_tag', 'a');
-    map {
-      print FLEET $_->attr('href')."]\n";
-      if ($_->attr('href') =~ /fleet\.aspx\?fleet=(\d+)$/) {
-        $id=$1;
-        $name = $_->as_text;
-      } elsif ($_->attr('href') =~ /map\.aspx\?loc=(\w\d\d:\d\d:\d\d:\d\d)$/) {
-        if (defined $loc) {
-          $dest = $1;
-        } else {
-          $loc = $1;
-        }
-#        $s->fleet(ae::Fleet->new( name => $name, loc => $loc, id => $fleet))
-#        $s->addFleet(name => $name, loc => $loc, id => $fleet)
-      }
-    } @hrefs;
-  } @tds;
+#Location
+       $itTD = shift @elTD;
+       next TR unless (defined $itTD);
+       $elA = $itTD->look_down('_tag', 'a');
+       if (defined $elA and $elA->attr('href') =~ /map\.aspx\?loc=(\w\d\d:\d\d:\d\d:\d\d)$/) {
+         $fleet->location($1);
+       }
 
-  print FLEET Dumper($s->fleet);
-#  $uri->query("fleet="
-#  $req = HTTP::Request->new('GET', $uri);
-#  sendRequest($s,$req);
+#Destination
+       $itTD = shift @elTD;
+       next TR unless (defined $itTD);
+       $elA = $itTD->look_down('_tag', 'a');
+       if (defined $elA and $elA->attr('href') =~ /map\.aspx\?loc=(\w\d\d:\d\d:\d\d:\d\d)$/) {
+         $fleet->destination($1);
+       }
 
-  close (FLEET);
+#Arrival
+       $itTD = shift @elTD;
+       next TR unless (defined $itTD);
+       if (defined $itTD->attr('id') and $itTD->attr('id') =~ /time/) {
+         $fleet->arrival(
+          $s->localTime->clone->add( seconds => $itTD->attr('title'))
+          );
+       }
 
+#Size
+       $itTD = shift @elTD;
+       next TR unless (defined $itTD);
+       $fleet->size($itTD->as_text);
+
+#Comment
+       $itTD = shift @elTD;
+       next TR unless (defined $itTD);
+
+       if (length($itTD->as_text) > 0) {
+         $fleet->comment($itTD->as_text);
+       }
+
+       $s->set_fleet($fleet->id => $fleet);
+
+       $s->getFleetDetail($fleet->id);
+
+     }
 }
 
 sub isSessionValid
@@ -368,7 +532,8 @@ sub login
   return if ($s->isSessionValid);
 
   $req = HTTP::Request->new('GET', $uri);
-  sendRequest($s,$req);
+
+  $s->sendRequest($req, 1);
 
   $uri->path( 'login.aspx' );
 
@@ -388,11 +553,11 @@ sub login
     post_back => 'true',
     );
   $req->content($uri->query());
-  sendRequest($s,$req);
+  $s->sendRequest($req, 1);
 
   $uriHome->path('account.aspx');
   $req = HTTP::Request->new('GET', $uriHome);
-  sendRequest($s,$req);
+  $s->sendRequest($req);
   
 }
 
