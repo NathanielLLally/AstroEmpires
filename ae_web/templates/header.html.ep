@@ -1,0 +1,33 @@
+<%#
+% content_for header => begin
+  %= stylesheet '/css/basic_modal.css'
+  %= javascript '/js/basic_modal.js'
+% end 
+
+%= javascript begin
+// Wait until the DOM has loaded before querying the document
+      $(document).ready(function(){
+
+        $.get('ajax.html', function(data){
+          modal.open({content: data});
+        });
+
+        $('a#login').click(function(e){
+          modal.open({content: "Login Please"});
+          e.preventDefault();
+        });
+
+        $('a#register').click(function(e){
+          modal.open({content: "Register"});
+          e.preventDefault();
+        });
+      });
+%= end
+%>
+
+<div class="main">
+            <div class="panel">
+                <a href="/ae/login" id="login">Log In</a>
+                <a href="#" id="register">Sign Up</a>
+            </div>
+</div>

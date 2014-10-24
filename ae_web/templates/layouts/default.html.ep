@@ -1,0 +1,19 @@
+<!doctype html>
+<html class="no-js" lang="en"> <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title><%= title %></title>
+  <meta name="description" content="">
+  <meta name="viewport" content="width=device-width">
+
+  %= include 'common_styles'
+  <%= content_for 'header' %>
+
+</head>
+<body>
+%= include 'header'
+  <%= content %>
+
+%= include 'common_js'
+</body>
+</html>

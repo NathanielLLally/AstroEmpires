@@ -1,0 +1,34 @@
+<!doctype html>
+<html class="no-js" lang="en"> <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title><%= title %></title>
+  <meta name="description" content="">
+  <meta name="viewport" content="width=device-width">
+
+  %= include 'common_styles'
+
+</head>
+<body>
+
+  <%= content %>
+
+%= include 'common_js'
+%= javascript '/js/libs/jquery.base64.min.js'
+%= javascript '/js/libs/jQueryRotateCompressed.js'
+%= javascript '/js/libs/LZWEncoder.js'
+%= javascript '/js/libs/NeuQuant.js'
+%= javascript '/js/libs/GIFEncoder.js'
+%= javascript '/js/libs/filereader.js'
+%= javascript '/js/libs/html5slider.js'
+%= javascript '/js/libs/underscore-min.js'
+%= javascript '/js/libs/backbone-min.js'
+%= javascript '/js/libs/backbone.nopersistence.js'
+%= javascript '/js/share.js'
+%= javascript '/js/mfanimated.js'
+%= javascript '/js/models.js'
+%= javascript '/js/ui.js'
+%= javascript '/js/startup.js'
+
+</body>
+</html>

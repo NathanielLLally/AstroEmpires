@@ -1,0 +1,28 @@
+% title 'Upload Images';
+% layout 'upload/images';
+%= include 'header';
+  <div id="container">
+
+        <div id="main" role="main">
+            <div class="top">
+                <div class="files">
+                    <div id="inimglist" class="clearfix"></div>
+                              </div>
+            </div>
+        </div>
+        <div id="dropArea">
+            <h2 class='support'><span>Drag and <em>Drop</em> images here</span></h2>
+            <h2 class='nosupport'>Your browser doesn't support FileReader, Drag and Drop, or some other modern required features. :(</h2>
+        </div>
+
+
+                <div id='results'>
+            <h2 class='onlyfiles'>
+
+            <button class='clear'>Reset</button>
+            <button class='play'>Submit</button>
+
+          </h2>
+
+        </div>
+  </div>
