@@ -1,21 +1,36 @@
-// ==UserScript==
-// @name        aeDrop
-// @namespace   aE
+﻿// ==UserScript==
+// @name        aegis
+// @description Astro Empires Galaxy Information Service
+// @namespace   http://cirrus.airitechsecurity.com
+// @downloadURL http://cirrus.airitechsecurity.com/js/aegis.user.js
+// @require     http://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js
 // @include     *.astroempires.com/*
 // @exclude     *.astroempires.com/login.aspx
 // @exclude     *.astroempires.com/home.aspx
-// @version     1
-// @require     http://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js
+// @version     0.2
 // @grant       GM_xmlhttpRequest
 // @grant       GM_log
 // @grant       GM_setValue
 // @grant       GM_getValue
+// @grant       GM_deleteValue
+// @grant       GM_listValues
+// @grant       GM_info
 // ==/UserScript==
 
-console.log("loading gmDrop");
+var version = GM_info.script.version;
+console.log("running aegis v"+version);
+if ('loading' == document.readyState) {
+  console.log("This script is running at document-start time.");
+} else {
+  console.log("This script is running with document.readyState: " + document.readyState);
+}
 
 
-var dropSiteURL = "http://cirrus.airitechsecurity.com/ae/gmDrop";
+console.log("grease monkey version "+GM_info.version);
+console.log("update?: "+GM_info.scriptWillUpdate);
+//console.log(GM_info.script);
+
+var aegisURL = "http://cirrus.airitechsecurity.com/ae/gis";
 if (document.location.href.match(/(.+?)astroempires.com/)) {
   var server = document.location.href.match(/\/(.+?).astroempires.com/) [1]
   server = server.replace(/\//, '')
@@ -27,49 +42,204 @@ if (document.location.href.match(/(.+?)astroempires.com/)) {
 var aeData = { 
   "server": server,
   "time": serverTime,
-  "player": playerID,
-  "fleet": [],
-  "base": [],
-  "astro": [],
+  "playerID": playerID,
+   add: function(tag, obj) {
+     var id = null;
+     if (obj['id'] != null) {
+       id = obj['id'];
+       delete obj['id'];
+     } else if (obj['location'] != null) {
+       id = obj['location'];
+     } else {
+       console.log('invalid obj! '+JSON.stringify(obj));
+       return;
+     }
+     if (this[tag] == null) {
+       this[tag] = {};
+     }
+     this[tag][id] = obj;
+   },
+   hasData: function() {
+     if (Object.keys(this).length > 5) {
+       return 1;
+     } else {
+       return 0;
+     }
+   }
 };
+/*
+  "fleet": {},
+  "base": {},
+  "astro": {},
+  "player": {},
+  */
 
-function sendToServer(url, data) {
+var sendTimeout;
 
-  var postData = JSON.stringify(data);
+function checkForUpdate() 
+{
+  var plugin_url="http://cirrus.airitechsecurity.com/js/aegis.user.js";
+  if ((parseInt(GM_getValue('last_update', '0')) + 86400000 <= (new Date().getTime()))){
+    GM_xmlhttpRequest( {
+      method: 'GET',
+      url: plugin_url,
+      headers: {'Cache-Control': 'no-cache'},
+      onload: function(resp){
+        var local_version, remote_version, rt, script_name;
 
-    console.log("posting to "+url+": "+postData);
+        rt=resp.responseText;
+        remote_version = parseFloat(/@version\s*(.*?)\s*$/m.exec(rt)[1]);
+        local_version = parseFloat(version);
 
-    GM_xmlhttpRequest({
-      method: "POST",
-      url: url,
-      data: postData,
-      headers: {
-        "Content-Type": "application/json"
-      },
-      ontimeout: function(response) {
-          console.log("ontimeout :" + response);
-      },
-      onerror: function(response) {
-          console.log("onerror :" + response);
-      },
-      onload: function(response) {
-          console.log("onload :" + response);
-        if (response.status == 200) {
-          console.log("sahksess");
-          var jsonResponse = JSON.parse(response.responseText);
-          console.log("got json status from server: "+jsonResponse.test);
-        } else {
-          console.log("hmm");
-          console.log(response.status);
+        script_name = (/@name\s*(.*?)\s*$/m.exec(rt))[1];
+
+        if (remote_version > local_version){
+
+          if(confirm('There is an update available for the Greasemonkey script ['+script_name+']\nWould you like to install it now?')){
+            GM_openInTab(plugin_url);
+            GM_setValue('last_update', new Date().getTime()+'');
+          }
         }
-
+        else{
+          console.log('No update is available for "'+script_name+'"');
+        }
       }
     });
+  } else {
+    console.log('last updated ' + GM_getValue('last_update', '0'));
+    GM_setValue('last_update', 0);
+  }
 
+}
+
+/* this function should be called once at script load time
+ * to see if a previous session had connection issues and send all the data 
+ */
+function checkSendBufferCache()
+{
+  var keys = GM_listValues();
+  /*
+  for (var i=0, var key=keys[i]; key != null; i++,key=keys[i] ) {
+
+    if(key.match(/^sendBuffer:/)) {
+      console.log('sendbuffer post');
+      var postData = GM_getValue(key);
+      var data = JSON.parse(postData);
+      GM_deleteValue(key);
+      sendToServer(data);
+    }
+  }
+  */
+}
+
+function checkSend(hashKey)
+{
+  var postData = GM_getValue(hashKey);
+  if (postData != null) {
+    feedback("server connection timeout<br>please restart firefox");
+    var data = JSON.parse(postData);
+    sendToServer(data);
+  }
+}
+
+function sendToServer(data) {
+
+  var hashKey = "sendBuffer:"+data['time'];
+  var postData = JSON.stringify(data);
+  console.log("posting to server: "+postData);
+
+  GM_setValue(hashKey, postData);
+  sendTimeout = setTimeout(function() { checkSend(hashKey); }, 10000);
+
+  GM_xmlhttpRequest({
+    method: "POST",
+    url: aegisURL,
+    data: postData,
+    headers: {
+      "Content-Type": "application/json"
+    },
+    ontimeout: function(response) {
+      console.log("ontimeout :"+response);
+    },
+    onerror: function(response) {
+      console.log("onerror :"+xml2string(response));
+    },
+    onload: function(response) {
+      console.log("onload :" + JSON.stringify(response));
+        console.log("clearing sendbuffer"  +hashKey);
+        GM_deleteValue(hashKey);
+        feedback("");
+      if (response.status == 200) {
+        var jsonResponse = JSON.parse(response.responseText);
+        console.log("got json status from server: "+jsonResponse.response);
+        clearTimeout(sendTimeout);
+      } else {
+        console.log("hmm");
+        //console.log(response.status);
+      }
+
+    }
+  });
+}
+
+/*
+ 		var col = '#461B7E'; // 72 hours +
+		if (age <= 3600)
+			col = '#FFFFFF'; // 1 hour
+		else if (age <=10800)
+			col = '#FFFFFF'; // 3 hours
+		else if (age <=21600)
+			col = '#9E7BFF'; // 6 hours
+		else if (age <=43200)
+			col = '#9172EC'; // 12 hours
+		else if (age <=86400)
+			col = '#8467D7'; // 24 hours
+		else if (age <=172800)
+			col = '#7A5DC7'; // 48 hours
+		else if (age <=259200)
+			col = '#461B7E'; // 72 hours
+		return col;
+*/
+
+function freeAccountRemoveAd()
+{
+  var elem = document.getElementById('advertising');
+  if (elem != null) {
+    elem.id="seeya";
+    elem.innerHTML="";
+  }
+}
+
+function feedback(msg)
+{
+  var elem = document.getElementById('aegis-feedback');
+  elem.innerHTML = msg;
+}
+
+function setupFeedback()
+{
+  var svrdrop = document.getElementById('servers-dropdown');
+  var elem = svrdrop.previousSibling;
+  elem.innerHTML = "<span id='aegis-tag' style='font-size: xx-small; color: #9E7BFF;'>aegis "+version+"</span>&nbsp&nbsp<span id='aegis-feedback' style='font-size: xx-small; color: #FF0000;'></span>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp<small>Server:</small>";
+}
+
+function myTimeTimer()
+{
+    var now = new Date();
+    myTime=now.formatDate('D jS M @ g:i:s a');
+    elem=document.getElementById('my-time');
+    elem.innerHTML=myTime;
+    var t = window.setTimeout(myTimeTimer, 1000);
 }
 
 function replaceTime()
 {
+  	elem=document.getElementById('server-time');
+    elem.id = "old-server-time";
+    var serverTime = elem.getAttribute("title");
+    elem.innerHTML = "<span id='server-time' title='"+serverTime+"'></span>&nbsp&nbsp&nbsp&nbsp<span id='my-time'></span>";
+    //myTimeTimer();
+
 	  for(n=1;n<=500;n++)
 	  {
 		elem=document.getElementById('timer'+n);
@@ -96,15 +266,15 @@ function replaceTime()
 		 tempdate.setDate(tempdate.getDate()+1)
 		 if(now.toLocaleDateString() == d.toLocaleDateString() )
 		 {
-		    endTime="Today @ "+d.formatDate('H:i:s');
+		    endTime="Today @ "+d.formatDate('g:i:s a');
 		 }
 		 else if(tempdate.toLocaleDateString() == d.toLocaleDateString())
 		 {
-		    endTime="Tomorrow @ "+d.formatDate('H:i:s');
+		    endTime="Tomorrow @ "+d.formatDate('g:i:s a');
 		 }
 		 else
 		 {
-		    endTime=d.formatDate('D jS M @ H:i:s');
+		    endTime=d.formatDate('D jS M @ g:i:s a');
 		 }
 	       }
 	       elem.innerHTML = "<b><span id='timer"+n+"' title='"+ s +"'>-</span></b><br><nobr><span id='done"+n+"' style='font-size: xx-small; color: "+getAgeCol(s)+"'>" + endTime + "</span></nobr>"
@@ -127,7 +297,7 @@ function replaceTime()
 //    correcting some stupid bugs in my days-in-the-months list!
 //  - levon ghazaryan. pointing out an error in z switch.
 //  - Andy Pemberton. pointing out error in c switch
-//
+///
 // input : format string
 // time : epoch time (seconds, and optional)
 //
@@ -496,6 +666,11 @@ function getAgeCol(age) {
 		return col;
 }
 
+function toFixed(value, precision) {
+    var power = Math.pow(10, precision || 0);
+    return String(Math.round(value * power) / power);
+}
+
 function xml2string(node) {
    if (typeof(XMLSerializer) !== 'undefined') {
       var serializer = new XMLSerializer();
@@ -503,6 +678,50 @@ function xml2string(node) {
    } else if (node.xml) {
       return node.xml;
    }
+}
+
+function matchFirstPos(string, re)
+{
+  if (string == null || re == null) {
+    return null;
+  }
+  var m = string.match(re);
+  if (m != null && m.length > 0) {
+    return m[1];
+  } else {
+    return null;
+  }
+}
+
+function fieldRightOfSlash(string)
+{
+  var m = string.match(/([\d.]+).*?\/.*?(\d+)/);
+  if (m != null && m.length > 2) {
+    return m[2];
+  }
+}
+
+function fieldPlayerFromLink(link)
+{
+  var player = {};
+  console.log(link.href);
+  if (link.href.match(/profile\.aspx\?player=(\d+)$/)) {
+    player['id'] = link.getAttribute("href").match(/=(\d+)$/)[1];
+    player['level'] = matchFirstPos(link.getAttribute("title"), /level (\d+\.\d+)/);
+    if (player['level'] == null) {
+      delete player['level'];
+    }
+
+    if (link.textContent.match(/\[.*?\]/)) {
+      player['guild'] = {tag: link.textContent.match(/(\[.*?\])/)[1] };
+      player['name'] = link.textContent.match(/\].*?(\S+)/)[1];
+    } else {
+      player['name'] = link.textContent;
+    }
+  }
+  var id = player['id'];
+  aeData.add('player',player);
+  return id;
 }
 
 function parseMapFleet(table, location) {
@@ -516,49 +735,39 @@ function parseMapFleet(table, location) {
     
   for(r=0; r<tr.length; r++){
     var dtRow = {};
-    
-    var td = tr[r].getElementsByTagName('td');
-      
-      
-  for(i=0; i<td.length; i++){
-    var sortKey = td[i].getAttribute("sorttable_customkey");
-      
-//      console.log("r "+r+" i " + i + " sk " + sortKey);
-    if (null !== sortKey) {
-    if (sortKey.match(/Fleet/)) {
-      var a = td[i].getElementsByTagName('a')[0];
-      
-      dtRow['id'] = a.getAttribute("href");
-      dtRow['name'] = a.innerHTML;
 
-    } else if (sortKey.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
-      dtRow['destination'] = sortKey;
-    } else if (td[i].getAttribute("sorttable_customkey").match(/\d+/)) {
-      if (td[i].getAttribute("title") == sortKey) {
+    dtRow['location'] = location;
+    
+    var tds = tr[r].getElementsByTagName('td');
+    if (tds != null && tds.length == 4){
+      
+      var a = tds[0].getElementsByTagName('a');
+      if (a != null && a.length > 0) {
+        dtRow['id'] = matchFirstPos(a[0].href, /fleet\.aspx\?fleet=(\d+)/);
+        dtRow['name'] = a[0].innerHTML;
+      }
+      var a = tds[1].getElementsByTagName('a');
+      if (a != null && a.length > 0) {
+        dtRow['player'] = fieldPlayerFromLink(a[0]);
+      }
+     
+      var sortKey = tds[2].getAttribute("sorttable_customkey");
+      if (sortKey != null) {
         dtRow['arrival'] = sortKey;
-      } else {
+      }
+      
+      var sortKey = tds[3].getAttribute("sorttable_customkey");
+      if (sortKey != null) {
         dtRow['size'] = sortKey;
       }
-
-    } else {
-      dtRow['player'] = {};
-      dtRow['player']['name'] = sortKey;
-      dtRow['player']['id'] = td[i].getElementsByTagName('a')[0].getAttribute("href");
+      
     }
+
+
+    if (Object.keys(dtRow).length > 0 && dtRow['id'] != null) {
+      aeData.add('fleet',dtRow);
     }
   }
-    if (dtRow['arrival'] == null) {
-        dtRow['location'] = location;
-    }
-    if (dtRow['arrival'] != null && dtRow['destination'] == null) {
-        dtRow['destination'] = location;
-    }
-    if (Object.keys(dtRow).length > 0) {
-      aeData['fleet'].push(dtRow);
-    }
-
-  }
-
 }
 
 function parseScanner(){
@@ -582,19 +791,42 @@ function parseFleet() {
    }
   }
   //console.log(xml2string(playerAndLoc));
-  
-  if (playerAndLoc.getElementsByTagName('form').length > 0) {
+ 
+  //our fleets have either the form for base selection or for movement
+  //  just care about nme fleets
+  if (playerAndLoc != null && playerAndLoc.getElementsByTagName('form').length > 0) {
+    console.log('returning');
     return;
   }
-  var links = playerAndLoc.getElementsByTagName('a');
-  dtRow['player'] = {};
-  dtRow['player']['id'] = links[0].getAttribute("href");
-  dtRow['player']['name'] = links[0].textContent;
-  dtRow['location'] = links[1].getAttribute("href");
+  var rows =  playerAndLoc.getElementsByTagName('tr');
+  if (rows != null && rows.length > 1) {
+    var cols = rows[1].getElementsByTagName('td');
+    if (cols != null && cols.length >= 4) {
+      var link = cols[0].getElementsByTagName('a');
+      if (link != null && link.length > 0) {
+        dtRow['player'] = fieldPlayerFromLink(link[0]);
+      }
+      link = cols[1].getElementsByTagName('a');
+      if (link != null && link.length > 0) {
+        dtRow['location'] = link[0].getAttribute("href").match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
+      }
+      //dest
+      link = cols[2].getElementsByTagName('a');
+      if (link != null && link.length > 0) {
+        if (dtRow['location'] != null) {
+          dtRow['origin'] = dtRow['location'];
+        }
+        dtRow['location'] = link[0].getAttribute("href").match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
+      }
+      if (cols[3].getAttribute('title').match(/\d+/)) {
+        dtRow['arrival'] = cols[3].getAttribute('title');
+      }
+    }
+  }
   
   //console.log(xml2string(document.getElementById('fleet_overview')));
   
-  dtRow['id'] = document.location.href.match(/fleet.aspx\?fleet=\d+/)[0];
+  dtRow['id'] = document.location.href.match(/fleet.aspx\?fleet=(\d+)/)[1];
   
   var fleetTable = document.getElementById('fleet_overview').getElementsByTagName('table')[0];
   var tr = fleetTable.getElementsByTagName('tr');
@@ -609,7 +841,7 @@ function parseFleet() {
   dtRow['size'] = fleetSize.match(/(\d+)/g).join("");
   
   
-  aeData['fleet'].push(dtRow);
+  aeData.add('fleet',dtRow);
 }
 
 function parseAstro() {
@@ -623,13 +855,13 @@ function parseAstro() {
    dtRow['terrain'] = el.textContent.match(/(Terrain: (.*?)Area)/)[2];
    dtRow['location'] = location;
   
-   aeData['astro'].push(dtRow);
+  aeData.add('astro',dtRow);
     
   var table = document.getElementById('map_base');    
   dtRow = {};
   if (table !== null) {
      
-     console.log(xml2string(table));
+     //console.log(xml2string(table));
       
       var rows = table.getElementsByTagName('table')[0].getElementsByTagName('tr');
              //console.log("hmm" + rows.length);
@@ -641,27 +873,23 @@ function parseAstro() {
              
          var link = col[i++].getElementsByTagName('a')[0];
          dtRow['name'] = link.textContent;
-         dtRow['id'] = link.getAttribute('href');
+         dtRow['id'] = link.getAttribute('href').match(/=(\d+)$/)[1];
          
          link = col[i++].getElementsByTagName('a')[0];
-         dtRow['owner'] = {};
-         dtRow['owner']['name'] = link.textContent;
-         dtRow['owner']['id'] = link.getAttribute('href');
+         dtRow['owner'] = fieldPlayerFromLink(link);
          
           link = col[i++].getElementsByTagName('a')[0];
              if (link != null) {
-         dtRow['occupier'] = {};
-         dtRow['occupier']['name'] = link.textContent;
-         dtRow['occupier']['id'] = link.getAttribute('href');
+         dtRow['occupier'] = fieldPlayerFromLink(link);
              }
          
          link = col[i].getElementsByTagName('a')[0];
-         dtRow['economy'] = link.textContent;
+         dtRow['economy'] = fieldRightOfSlash(link.textContent);
          }
          
      }
      
-      aeData['base'].push(dtRow);
+      aeData.add('base',dtRow);
   }
     
   var mapfleet = document.getElementById('map_fleets');
@@ -689,7 +917,7 @@ function parseSystem() {
 //  console.log(xml2string(table));
 
   var links = table.getElementsByTagName('a');
-
+  var player = {};
   for (li = 0; li < links.length; li++) {
     var link = links[li];
 //    console.log(link.getAttribute('href'));
@@ -723,9 +951,9 @@ function parseSystem() {
 
         //is it a base?
         if (link.getAttribute("href").match(/base\.aspx\?base=/)) {
-          baseRow['id'] = link.getAttribute("href").match(/base\.aspx\?base=(\d+)/)[0];
+          baseRow['id'] = link.getAttribute("href").match(/base\.aspx\?base=(\d+)/)[1];
           baseRow['location'] = astroRow['location'] ;
-          var player = {};
+          player = {};
         }
 
         //for astros with bases, the subsequent 1-3 divs will
@@ -741,8 +969,8 @@ function parseSystem() {
                 baseRow['owner'] = player;
                 player = {};
               }
-              player['id'] = a[0].getAttribute("href");
-              player['name'] = a[0].textContent;
+              player = fieldPlayerFromLink(a[0]);
+
               if (baseRow['owner'] != null) {
                 baseRow['occupier'] = player;
               }
@@ -756,13 +984,13 @@ function parseSystem() {
                     if (nfo != null && nfo.length > 0) {
                       fleetRow['location'] = astroRow['location'];
                       fleetRow['size'] = nfo[1].match(/\d+/g).join("");
-                      aeData['fleet'].push(fleetRow);
+                      aeData.add('fleet',fleetRow);
                       fleetRow = {};
                       var inc = nfo[2].match(/\d+/g).join("");
                       if (inc != "0") {
                         fleetRow['destination'] = astroRow['location'];
                         fleetRow['size'] = inc;
-                        aeData['fleet'].push(fleetRow);
+                        aeData.add('fleet',fleetRow);
                         fleetRow = {};
                       }
                     }
@@ -779,14 +1007,14 @@ function parseSystem() {
             baseRow['owner'] = player;
           }
 
-          aeData['base'].push(baseRow);
+          aeData.add('base',baseRow);
           baseRow = {};
         }
 
         if (daysOld != null) {
           astroRow['daysOld'] = daysOld;
         }
-        aeData['astro'].push(astroRow);
+        aeData.add('astro',astroRow);
         astroRow = {};
       }
     }
@@ -796,13 +1024,13 @@ function parseSystem() {
 function parseBase() {
   var baseRow = {};
 
+  baseRow['id'] = matchFirstPos(document.location.href, /base\.aspx\?base=(\d+)/);
+
   var tables = document.getElementsByTagName('table');
   if (tables != null && tables.length > 0) {
     for (i = 0; i < tables.length; i++) {
-      console.log('table '+i);
       var table = tables[i];
       var rows = table.getElementsByTagName('tr');
-
 /*
       if (rows.length > 1) {
       console.log("rows " + rows.length +
@@ -812,21 +1040,46 @@ function parseBase() {
       }
       */
 
-      if (rows != null && rows.length == 2) {
+      if (rows != null && rows.length > 1) {
         var colsTH =  rows[0].getElementsByTagName('th');
         var colsTD =  rows[1].getElementsByTagName('td');
 
-        if (colsTH.length == colsTD.length && colsTH.length == 6) {
+        if (colsTD.length > 4 && colsTH.length == 6) {
+          console.log('now what');
+          //your base
+          var op = colsTH[0].getElementsByTagName('option');
+          if (op != null && op.length > 0) {
+//            for (var i = 0, var o =op[0]; o != null; o = op[i++]) {
+            var o = op[0];
+            for (var i = 0; o != null; o = op[++i]) {
+              console.log(o.getAttribute("selected"));
+              console.log(o.innerHTML + "|" + o.textContent);
+              if (o.getAttribute("selected") == "selected") {
+                baseRow['name'] = o.textContent.match(/\S+/)[0];
+              }
+            }
+            for (ih = 1; ih < colsTH.length; ih++) {
+              //console.log(colsTH[ih].textContent  + " = " + colsTD[ih - 1].textContent);
+              var key = colsTH[ih].textContent;
+              if (key == "Location") {
+                baseRow['location'] = colsTD[ih - 1].textContent;
+              } else if (key == "Trade Routes") {
+                baseRow['tradeRoutes'] = colsTD[ih - 1].textContent;
+              }
+            }
 
-          for (ih = 0; ih < colsTH.length; ih++) {
-//            console.log(colsTH[ih].textContent  + " = " + colsTD[ih].textContent);
-            var key = colsTH[ih].textContent;
-            if (key == "Base Name") {
-              baseRow['name'] = colsTD[ih];
-            } else if (key == "Location") {
-              baseRow['location'] = colsTD[ih];
-            } else if (key == "Trade Routes") {
-              baseRow['tradeRoutes'] = colsTD[ih];
+          } else {
+            //others base
+            for (ih = 0; ih < colsTH.length; ih++) {
+              console.log(colsTH[ih].textContent  + " = " + colsTD[ih].textContent);
+              var key = colsTH[ih].textContent;
+              if (key == "Base Name") {
+                baseRow['name'] = colsTD[ih].textContent.match(/\S+/)[0];
+              } else if (key == "Location") {
+                baseRow['location'] = colsTD[ih].textContent;
+              } else if (key == "Trade Routes") {
+                baseRow['tradeRoutes'] = colsTD[ih].textContent;
+              }
             }
           }
         }
@@ -845,23 +1098,20 @@ function parseBase() {
       if (tds[0].textContent == "Base Owner") {
         var a = tds[1].getElementsByTagName('a');
         if (a != null && a.length > 0) {
-          console.log(a[0].textContent);
-          baseRow['owner'] = {};
-          baseRow['owner']['id'] = a[0].getAttribute('href');
-          baseRow['owner']['name'] = a[0].textContent;
+          baseRow['owner'] = fieldPlayerFromLink(a[0]);
         }
       } else if (tds[0].textContent == "Economy") {
         baseRow['economy'] = tds[1].textContent;
-      } else if (tds[0].textContent == "Owner Income") {a
+      } else if (tds[0].textContent == "Owner Income") {
         if (tds[1].textContent != baseRow['economy']) {
-          baseRow['ownerIncome'] = tds[1].textContent / baseRow['economy'] * 100;
+          baseRow['ownerIncome'] = toFixed(tds[1].textContent / baseRow['economy'] * 100, 2) + "%";
         }
       }
     }
   }
 
   var tblFleets = document.getElementById('base_fleets').getElementsByTagName('table')[0];
-  parseMapFleet(tblFleets);
+  parseMapFleet(tblFleets, baseRow['location']);
 
   var tblStru = document.getElementById('base_resume-structures');
  
@@ -877,7 +1127,7 @@ function parseBase() {
       var ccJg = tds[2];
       var ccJgVal = tds[3];
       if (ccJgVal != null && ccJgVal.textContent.match(/\d/)) {
-        console.log( ccJgVal.innerHTML);
+        //console.log( ccJgVal.innerHTML);
         var vals = ccJgVal.innerHTML.match(/(\d+)</g);
         baseRow['Command Centers'] = vals[0].match(/\d+/)[0];
         if (vals.length > 1) {
@@ -892,7 +1142,7 @@ function parseBase() {
         var val = defVal.getElementsByTagName('span');
         for (j = 0; j < name.length; j++) {
           if (name[j] != null && val[j] != null) {
-            ds[name[j].textContent] = val[j].textContent;
+            ds[name[j].textContent] = fieldRightOfSlash(val[j].textContent);
           }
         }
       }
@@ -902,24 +1152,80 @@ function parseBase() {
     }
   }
   
-  aeData['base'].push(baseRow);
+  aeData.add('base',baseRow);
 }
 
 function parseEmpire()
 {
   var baseRow = {};
+
   var table = document.getElementById('empire_events').getElementsByTagName('table')[0];
   var rows = table.getElementsByTagName('tr');
   for (i = 0; i < rows.length; i++) {
     var cols = rows[i].getElementsByTagName('td');
-    if (cols != null and cols.length > 0) {
+    if (cols != null && cols.length > 0) {
       var a = cols[0].getElementsByTagName('a')[0];
       baseRow['name'] = a.textContent;
+      baseRow['id'] = a.href.match(/base=(\d+)$/)[1];
+
+      a = cols[1].getElementsByTagName('a')[0];
       baseRow['location'] = a.href.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
+
+      baseRow['economy'] = fieldRightOfSlash(cols[2].textContent);
+//      baseRow['economy'] = cols[2].textContent;
+      baseRow['owner'] = playerID;
+
+      a = cols[3].getElementsByTagName('a')[0];
+      var occ = a.href.match(/player=(\d+)/)[1];
+      if (occ > 0) {
+        baseRow['occupier'] = fieldPlayerFromLink(a);
+      }
+
+      aeData.add('base',baseRow);
+      baseRow={};
+    }
+  }
+}
+
+function parseEmpireTrade()
+{
+}
+
+function parseGuild()
+{
+  var playerRow = {};
+  var guild = {};
+  //guild
+  var table=document.getElementById('profile_show').getElementsByTagName('table')[0];
+  var rows = table.getElementsByTagName('tr');
+  if (rows != null && rows.length > 0) {
+    guild['name'] = rows[0].textContent.match(/[\w\s]+/)[0];
+    var match = rows[1].textContent.match(/Guild: (\d+).*?Tag: (\[.*?\])/);
+    if (match != null && match.length > 0) {
+      guild['id'] = match[1];
+      guild['tag'] = match[2];
     }
   }
 
-  console.log(baseRow['location']);
+
+  //members
+  var table=document.getElementById('guild_members').getElementsByTagName('table')[0];
+  var row;
+  var rows = table.getElementsByTagName('tr');
+  for (var i=0, row=null; row=rows[i]; i++) {
+    var cols  = row.getElementsByTagName('td');
+    if (cols != null && cols.length > 0) {
+      var link = cols[2].getElementsByTagName('a')[0];
+      playerRow['name'] = link.textContent;
+      playerRow['id'] = link.getAttribute("href").match(/=(\d+)$/)[1];
+      if (cols[3].textContent.match(/(Free|Upgraded)/)) {
+        playerRow['upgraded'] = cols[3].textContent;
+      }
+      playerRow['guild'] = guild;
+    }
+    aeData.add('player',playerRow);
+    playerRow = {};
+  }
 }
 
 /********************************************************************************************************
@@ -927,14 +1233,22 @@ function parseEmpire()
 
 try {
   if (document.location.href.match(/astroempires\.com/)) {
+    setupFeedback();
+    freeAccountRemoveAd();
+
+    checkForUpdate();
+
     replaceTime();
+
+    checkSendBufferCache();
+
     if (document.location.href.match(/view=scanners/)) { 
       parseScanner();
 
     } else if (document.location.href.match(/fleet\.aspx\?fleet=/)) {
       parseFleet();
 
-    } else if (document.location.href.match(/base\.aspx\?base/)) {
+    } else if (document.location.href.match(/base\.aspx\?base=\d+$/)) {
       parseBase();
 
     } else if (document.location.href.match(/map\.aspx\?loc=[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
@@ -943,14 +1257,16 @@ try {
     } else if (document.location.href.match(/map\.aspx\?loc=[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
       parseSystem();
 
-    } else if (document.location.href.match(/empire\.aspx/)) {
+    } else if (document.location.href.match(/empire\.aspx$/)) {
 
       parseEmpire();
+    } else if (document.location.href.match(/guild\.aspx/)) {
+      parseGuild();
     }
 
-    console.log(JSON.stringify(aeData));
-    if (aeData['fleet'].length > 0 || aeData['base'].length > 0 || aeData['astro'].length > 0) {
-      sendToServer(dropSiteURL, aeData);
+    //console.log(JSON.stringify(aeData));
+    if (aeData.hasData()) {
+      sendToServer(aeData);
     }
     
   }
@@ -958,5 +1274,4 @@ try {
   console.log(e);
 }
 
-console.log("done");
-
+console.log("aegis ran successfully");

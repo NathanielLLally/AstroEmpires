@@ -37,8 +37,8 @@ sub startup {
   $r->any('/upload')->to('main#upload');
   $r->any('/upload/:name')->to('main#upload');
   $r->get('/ae/login')->to(controller => 'main', action => 'login');
-  $r->post('/ae/gmDrop')->to(controller => 'main', action => 'dumpPostData');
-  $r->get('/ae/gmDrop')->to(controller => 'example', action => 'welcome');
+  $r->post('/ae/gis')->to(controller => 'main', action => 'dumpPostData');
+  $r->get('/ae/gis')->to(controller => 'example', action => 'welcome');
 
 }
 

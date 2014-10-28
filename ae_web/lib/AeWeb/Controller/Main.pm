@@ -9,11 +9,63 @@ use MIME::Base64 qw/encode_base64 decode_base64 decode_base64url encode_base64ur
 use URI;
 use Mango::BSON qw/:bson/;
 use DateTime;
+use DBI;
+use Try::Tiny;
 use Data::Dumper;
 
 sub index {
   my $s = shift;
   $s->render;
+}
+
+
+sub storeData
+{
+  my ($s, $ae) = @_;
+
+  DBI->trace(3);
+
+  my $dbh = DBI->connect_cached("DBI:mysql:database=aE;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1});
+  if (not defined $dbh) {
+    $s->app->log->debug(DBI::errstr);
+    return;
+  }
+
+  my ($server, $time, $playerId) = ($ae->{'server'}, $ae->{'time'}, $ae->{'playerID'});
+  map { $s->app->log->debug($_); delete $ae->{$_}; } qw/server time playerID/;
+  $s->app->log->debug(Dumper(\$ae));
+
+  foreach my $dbTable (keys %$ae) {
+    if ($dbTable eq 'player') {
+
+      my $sth = $dbh->prepare('insert into player (server, time, id, name, level, upgraded, guildTag, guildId, guildName) values (?,?,?,?,?,?,?,?,?)');
+      $sth->bind_param(1, $server);
+      $sth->bind_param(2, $time);
+
+      foreach my $id (keys %{$ae->{player}}) {
+        my $p = $ae->{player}->{$id};
+        my $guild = $p->{guild};
+
+        $sth->bind_param(3, $id);
+        $sth->bind_param(4, $p->{name});
+        $sth->bind_param(5, $p->{level});
+        $sth->bind_param(6, $p->{upgraded});
+        $sth->bind_param(7, $guild->{tag});
+        $sth->bind_param(8, $guild->{id});
+        $sth->bind_param(9, $guild->{name});
+        try {
+          $sth->execute();
+        } catch {
+          warn $_;
+        };
+
+      }
+    } elsif ($dbTable eq 'astro') {
+    } elsif ($dbTable eq 'base') {
+    } elsif ($dbTable eq 'fleet') {
+    }
+  }
+
 }
 
 sub dumpPostData {
@@ -32,10 +84,13 @@ sub dumpPostData {
 
     $s->render(json => { status => 206,error => $json->error });
   } else {
-    $s->app->log->debug('rendering json response');
-    $s->stash(data => "why is the HTML template being used?");
 
-    $s->render(json => { status => 200, test => 'ing' });
+    $s->storeData($aeData);
+
+    $s->app->log->debug('rendering json response');
+
+    $s->stash(json => { status => 200, response => 'sahksess' });
+    $s->render(template => 'main/response', format => 'json');
   }
 }
 
