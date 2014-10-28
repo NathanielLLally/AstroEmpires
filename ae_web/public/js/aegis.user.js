@@ -30,7 +30,7 @@ console.log("grease monkey version "+GM_info.version);
 console.log("update?: "+GM_info.scriptWillUpdate);
 //console.log(GM_info.script);
 
-var aegisURL = "http://cirrus.airitechsecurity.com/ae/gis";
+var aegisURL = "http://cirrus.airitechsecurity.com/ae/gis.json";
 if (document.location.href.match(/(.+?)astroempires.com/)) {
   var server = document.location.href.match(/\/(.+?).astroempires.com/) [1]
   server = server.replace(/\//, '')
@@ -156,6 +156,7 @@ function sendToServer(data) {
     url: aegisURL,
     data: postData,
     headers: {
+      "Accept": "application/json",
       "Content-Type": "application/json"
     },
     ontimeout: function(response) {
@@ -818,7 +819,7 @@ function parseFleet() {
         }
         dtRow['location'] = link[0].getAttribute("href").match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
       }
-      if (cols[3].getAttribute('title').match(/\d+/)) {
+      if (cols[3].getAttribute('title') != null && cols[3].getAttribute('title').match(/\d+/)) {
         dtRow['arrival'] = cols[3].getAttribute('title');
       }
     }
@@ -830,11 +831,15 @@ function parseFleet() {
   
   var fleetTable = document.getElementById('fleet_overview').getElementsByTagName('table')[0];
   var tr = fleetTable.getElementsByTagName('tr');
+  var ships = {};
   for(r=0; r<tr.length; r++){
     var td = tr[r].getElementsByTagName('td');
     if (td.length > 0) {
-     dtRow[td[0].textContent] = td[1].textContent;
+     ships[td[0].textContent] = td[1].textContent;
    }
+  }
+  if (Object.keys(ships).length > 0) {
+    dtRow['ships'] = ships;
   }
   
   var fleetSize = document.getElementById('fleet_overview').getElementsByTagName('center')[0].textContent;
@@ -846,19 +851,17 @@ function parseFleet() {
 
 function parseAstro() {
 
-  var dtRow = {};
+  var aRow = {};
   var el = document.getElementsByClassName('astro')[0];
   var location = document.location.href.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
   
    console.log(el.textContent);
-   dtRow['type'] = el.textContent.match(/(Astro Type: (.*?)Terrain)/)[2];
-   dtRow['terrain'] = el.textContent.match(/(Terrain: (.*?)Area)/)[2];
-   dtRow['location'] = location;
+   aRow['type'] = el.textContent.match(/(Astro Type: (.*?)Terrain)/)[2];
+   aRow['terrain'] = el.textContent.match(/(Terrain: (.*?)Area)/)[2];
+   aRow['location'] = location;
   
-  aeData.add('astro',dtRow);
-    
   var table = document.getElementById('map_base');    
-  dtRow = {};
+  var dtRow = {};
   if (table !== null) {
      
      //console.log(xml2string(table));
@@ -874,6 +877,8 @@ function parseAstro() {
          var link = col[i++].getElementsByTagName('a')[0];
          dtRow['name'] = link.textContent;
          dtRow['id'] = link.getAttribute('href').match(/=(\d+)$/)[1];
+         dtRow['location'] = location;
+         aRow['base'] = dtRow['id'];
          
          link = col[i++].getElementsByTagName('a')[0];
          dtRow['owner'] = fieldPlayerFromLink(link);
@@ -889,7 +894,9 @@ function parseAstro() {
          
      }
      
-      aeData.add('base',dtRow);
+     aeData.add('astro',aRow);
+    
+     aeData.add('base',dtRow);
   }
     
   var mapfleet = document.getElementById('map_fleets');
@@ -953,6 +960,7 @@ function parseSystem() {
         if (link.getAttribute("href").match(/base\.aspx\?base=/)) {
           baseRow['id'] = link.getAttribute("href").match(/base\.aspx\?base=(\d+)/)[1];
           baseRow['location'] = astroRow['location'] ;
+          astroRow['base'] = baseRow['id'];
           player = {};
         }
 
@@ -982,17 +990,8 @@ function parseSystem() {
                   if (!(fleet.match(/Self/))) {
                     var nfo = fleet.match(/Fleet present: ([\d,]+) - Incoming: ([\d,])/);
                     if (nfo != null && nfo.length > 0) {
-                      fleetRow['location'] = astroRow['location'];
-                      fleetRow['size'] = nfo[1].match(/\d+/g).join("");
-                      aeData.add('fleet',fleetRow);
-                      fleetRow = {};
-                      var inc = nfo[2].match(/\d+/g).join("");
-                      if (inc != "0") {
-                        fleetRow['destination'] = astroRow['location'];
-                        fleetRow['size'] = inc;
-                        aeData.add('fleet',fleetRow);
-                        fleetRow = {};
-                      }
+                      astroRow['unknownFleet'] = nfo[1].match(/\d+/g).join("");
+                      astroRow['unknownIncoming'] = nfo[2].match(/\d+/g).join("");
                     }
                   }
                 }
@@ -1129,9 +1128,9 @@ function parseBase() {
       if (ccJgVal != null && ccJgVal.textContent.match(/\d/)) {
         //console.log( ccJgVal.innerHTML);
         var vals = ccJgVal.innerHTML.match(/(\d+)</g);
-        baseRow['Command Centers'] = vals[0].match(/\d+/)[0];
+        baseRow['commandCenters'] = vals[0].match(/\d+/)[0];
         if (vals.length > 1) {
-          baseRow['Jump Gate'] = vals[1].match(/\d+/)[0];
+          baseRow['jumpGate'] = vals[1].match(/\d+/)[0];
         }
       }
       var def = tds[4];

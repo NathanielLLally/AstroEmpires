@@ -529,7 +529,7 @@ sub login
 
   #  if we have an un-expired session, no need
   #
-  return if ($s->isSessionValid);
+#  return if ($s->isSessionValid);
 
   $req = HTTP::Request->new('GET', $uri);
 

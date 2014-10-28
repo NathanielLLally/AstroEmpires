@@ -15,6 +15,8 @@ sub startup {
   # Documentation browser under "/perldoc"
   $s->plugin('PODRenderer');
 
+#  $s->types->type
+
  $s->hook(before_dispatch => sub {
 #    push @{$self->req->url->base->path->parts}, splice @{$self->req->url->path->parts}, 0, 2;
     my $s = shift;
