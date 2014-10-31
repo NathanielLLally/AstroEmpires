@@ -1,12 +1,26 @@
-% title 'Cirrus Cloud';
+% title 'AE Galaxy Information Service';
 % layout 'default';
 
-<ul>
-<li>
-  <%= link_to url_for('upload/images') => begin%>ImageUpload <% end %>
-</li>
-<li>
-  <%= link_to url_for('images') => begin%>View Images <% end %>
-</li>
-</ul>
-<p>
+
+<div class="section box">
+<span class="text">
+<h3>Welcome to the AEGIS frontend</h3>
+Here in the days to come you will find an interface to the data collected by all of us that use aegis.<p>
+To use this script you must:
+<ol>
+<li>use firefox</li>
+<li><strong>install <a href="https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/">grease monkey</a></strong></li>
+<li>install my <a href="http://cirrus.airitechsecurity.com/dev/js/aegis.user.js">aegis script</a></li>
+<li>you must use the dark astros skin</li>
+</ol>
+</span>
+</div>
+
+<div class="section box">
+  <span class="pbutton text">
+  <%= link_to url_for('gis/displayView/AllBases') => begin%>View All Bases<% end %>
+<%= link_to url_for('gis/displayView/ProductionPlanet') => begin%>Free Production Astros<% end %>
+<%= link_to url_for('gis/displayView/EconomyPlanet') => begin%>Free Economy Astros<% end %>
+  </span>
+
+</div>

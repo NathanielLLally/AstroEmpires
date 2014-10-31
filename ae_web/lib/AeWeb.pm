@@ -1,6 +1,5 @@
 package AeWeb;
 use Mojo::Base 'Mojolicious';
-use Mango;
 use Data::Dumper;
 
 sub secret {
@@ -14,6 +13,7 @@ sub startup {
 
   # Documentation browser under "/perldoc"
   $s->plugin('PODRenderer');
+  my $conf = $s->plugin('Config');
 
 #  $s->types->type
 
@@ -24,19 +24,15 @@ sub startup {
     $s->app->log->debug( Dumper( $s->req->url->base->path->parts ) );
   });
 
-  my $conf = $s->plugin('Config');
 
   $s->secret('sol');
-  $s->helper(mango => sub { state $mango = Mango->new(
-    "mongodb://localhost/ae");});
 
   # Router
   my $r = $s->routes;
 
   # Normal route to controller
   $r->any('/ae')->to(controller => 'main', action => 'index');
-  $r->any('images')->to('main#showImages');
-  $r->any('/upload')->to('main#upload');
+  $r->any('/ae/gis/displayView/:view')->to(controller => 'main', action => 'displayView');
   $r->any('/upload/:name')->to('main#upload');
   $r->get('/ae/login')->to(controller => 'main', action => 'login');
   $r->post('/ae/gis')->to(controller => 'main', action => 'dumpPostData');

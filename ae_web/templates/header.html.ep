@@ -1,33 +1,40 @@
-<%#
-% content_for header => begin
-  %= stylesheet '/css/basic_modal.css'
-  %= javascript '/js/basic_modal.js'
-% end 
-
 %= javascript begin
-// Wait until the DOM has loaded before querying the document
-      $(document).ready(function(){
-
-        $.get('ajax.html', function(data){
-          modal.open({content: data});
+      $(function() {
+        $('a[rel*=leanModal]').leanModal({ top : 200, closeButton: ".modal_close" });   
         });
-
-        $('a#login').click(function(e){
-          modal.open({content: "Login Please"});
-          e.preventDefault();
-        });
-
-        $('a#register').click(function(e){
-          modal.open({content: "Register"});
-          e.preventDefault();
-        });
-      });
 %= end
-%>
 
 <div class="main">
-            <div class="panel">
-                <a href="/ae/login" id="login">Log In</a>
-                <a href="#" id="register">Sign Up</a>
+  <div class="panel">
+    <a id="go" name="login" rel="leanModal" href="#login">Log In</a>
+    <a id="go" name="signup" rel="leanModal" href="#register">Sign Up</a>
+    </div>
+
+    <div id="login">
+      <div id="login-ct">
+        <div id="login-header">
+          <h2>Login to aegis frontend</h2>
+          <p>Note: you must have used the grease monkey plugin already</p>
+          <a class="modal_close" href="#"></a>
+        </div>
+
+            <form action="">
+
+            <div class="txt-fld">
+            <label for="">PlayerID</label>
+            <input id="" class="good_input" name="" type="text" />
+
+            </div>
+
+            <div class="txt-fld">
+            <label for="">Password</label>
+            <input id="" name="" type="text" />
+
+            </div>
+            <div class="btn-fld">
+            <button type="submit">Login &raquo;</button>
+            </div>
+            </form>
+            </div>
             </div>
 </div>

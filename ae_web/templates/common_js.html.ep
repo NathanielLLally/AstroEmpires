@@ -2,3 +2,4 @@
 %= javascript '/js/script.js'
 %= javascript '/js/libs/jquery-1.7.1.min.js'
 %= javascript '/js/knockout-2.2.1.js'
+%= javascript '/js/libs/jquery.leanModal.min.js'

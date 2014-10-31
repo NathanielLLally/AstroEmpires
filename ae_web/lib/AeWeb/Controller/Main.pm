@@ -2,6 +2,7 @@ package AeWeb::Controller::Main;
 use Mojo::Base 'Mojolicious::Controller';
 use Mojo::JSON;
 use Mojo::IOLoop;
+use Mojo::Util qw/dumper/;
 use Data::Dumper;
 use URI::Escape;
 use Try::Tiny;
@@ -13,10 +14,22 @@ use DBI;
 use Try::Tiny;
 use DateTime::Format::DateManip;
 use Date::Manip;
+use Tie::IxHash;
 use Data::Dumper;
 
 sub index {
   my $s = shift;
+
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+
+  my (@headers, $sth, $rs);
+  $sth = $dbh->table_info('', 'ae', undef, "VIEW");
+  $rs = $sth->fetchall_arrayref();
+  foreach my $row (@$rs) {
+      $s->app->log->debug(dumper $row);
+  }
+
+  my $view = $s->req->url->path;
   $s->render;
 }
 
@@ -25,19 +38,18 @@ sub storeData
 {
   my ($s, $ae) = @_;
 
-  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1});
-  if (not defined $dbh) {
-    $s->app->log->debug(DBI::errstr);
-    return;
-  }
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
 
-  my ($server, $time, $playerId) = ($ae->{'server'}, $ae->{'time'}, $ae->{'playerID'});
+  my ($server, $time, $playerId, $daysOld) = ($ae->{'server'}, $ae->{'time'}, $ae->{'playerID'}, $ae->{daysOld});
+  map { delete $ae->{$_}; } qw/server time playerID daysOld/;
 
   my $dtServer = DateTime::Format::DateManip->parse_datetime(ParseDate($time));
 
+  if (defined $daysOld) {
+    my $dtData = $dtServer->clone->subtract(days => $daysOld);
+  }
 
-  map { $s->app->log->debug($_); delete $ae->{$_}; } qw/server time playerID/;
-  $s->app->log->debug(Dumper(\$ae));
+  #$s->app->log->debug(Dumper(\$ae));
 
   foreach my $dbTable (keys %$ae) {
     if ($dbTable eq 'player') {
@@ -85,17 +97,16 @@ sub storeData
 
         my $sth = $dbh->prepare(qq/
         insert into astro
-          (server,time,playerId,location,terrain,type,base, unknownFleet, unknownIncoming, daysOld)
+          (server,time,playerId,location,terrain,type,base, unknownFleet, unknownIncoming)
         values
-          (?,?,?,?,?,?,?,?,?,?)
+          (?,?,?,?,?,?,?,?,?)
         on duplicate key update 
           time = values(time),
           terrain = values(terrain),
           type = values(type),
           base = values(base),
           unknownFleet = values(unknownFleet),
-          unknownIncoming = values(unknownIncoming),
-          daysOld = values(daysOld)
+          unknownIncoming = values(unknownIncoming)
         /);
         my $i = 1;
         $sth->bind_param($i++, $server);
@@ -107,7 +118,6 @@ sub storeData
         $sth->bind_param($i++, $e->{base});
         $sth->bind_param($i++, $e->{unknownFleet});
         $sth->bind_param($i++, $e->{unknownIncoming});
-        $sth->bind_param($i++, $e->{daysOld});
 
         try {
           $sth->execute();
@@ -127,14 +137,14 @@ sub storeData
           (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         on duplicate key update
           time      = values(time),
-          name      = values(name),
+          name      = ifnull(values(name),name),
           owner      = values(owner),
-          occupier      = values(occupier),
-          economy      = values(economy),
+          occupier      = ifnull(values(occupier),occupier),
+          economy      = ifnull(values(economy),economy),
           ownerIncome      = ifnull(values(ownerIncome),ownerIncome),
           tradeRoutes      = ifnull(values(tradeRoutes),tradeRoutes),
-          commandCenters      = values(commandCenters),
-          jumpGate      = values(jumpGate)
+          commandCenters      = ifnull(values(commandCenters), commandCenters),
+          jumpGate      = ifnull(values(jumpGate), jumpGate)
           /);
         my $i = 1;
         $sth->bind_param($i++, $server);
@@ -240,7 +250,6 @@ sub storeData
           $ships = join('|', map { "$_:".$es->{$_}; } keys %$es);
         }
         $sth->bind_param($i++, $ships);
-
         try {
           $sth->execute();
         } catch {
@@ -249,12 +258,66 @@ sub storeData
       }
     }
   }
+}
 
+sub displayView {
+  my $s = shift;
+
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+
+  my $view = $s->req->url->path;
+  $view =~ s/.*\///;
+  $s->app->log->debug("showing view v$view");
+
+  my (@headers, $sth, $rs);
+
+  $sth = $dbh->column_info('ae', "v$view", undef, undef);
+  $rs = $sth->fetchall_arrayref();
+  foreach my $row (@$rs) {
+    push @headers, $row->[3];
+  }
+
+  $sth = $dbh->prepare("select * from v$view");
+  try {
+    $sth->execute();
+  } catch {
+    die "call error: $_";
+  };
+  $rs = $sth->fetchall_arrayref();
+
+  my $shortFieldName = {
+    ownerTag => 'tag',
+    occupier => 'occ',
+    occupierTag => 'tag',
+    economy => 'econ',
+    ownerIncome => 'inc %',
+    tradeRoutes => 'trades',
+    jumpGate => 'jg',
+    commandCenters => 'cc',
+    barracks => 'b',
+    laserTurrets => 'lt',
+    missileTurrets => 'mt',
+    ionTurrets => 'it',
+    photonTurrets => 'pt',
+    disruptorTurrets => 'dt',
+    deflectionShields => 'ds',
+    planetaryShields => 'ps',
+    planetaryRing => 'pr',
+  };
+
+  $s->stash(
+    viewName => $view,
+    shortFieldName => $shortFieldName,
+    headers => \@headers,
+    resultSet => $rs
+  );
+  $s->render(template => 'main/displayView');
 }
 
 sub dumpPostData {
   my $s = shift;
 
+  $s->app->log->info($s->req->headers->header('x-real-ip'));
   $s->app->log->debug($s->req->body);
 
   my $json = Mojo::JSON->new;
@@ -334,62 +397,4 @@ sub showImages {
  }
 }
 
-sub upload {
-  my $s = shift;
-
-  if ($s->stash('name')) {
-    $s->app->log->debug($s->stash('name'));
-    $s->render("upload/".$s->stash('name'));
-  } else {
-    if ($s->stash('format') eq 'json') {
-      $s->app->log->debug("format is json");
-#   
-#      $s->app->log->debug($data);
-      my $src = $s->req->param('src');
-
-      #  strip MIME header to save only binary image
-      #  as base64 is roughly 30% bigger
-      #
-      $src =~ s/^data:(.*?)base64,//;
-      my $type = $1;
-      $s->app->log->debug("got image type $type");
-      my $md5 = '';#MD5->hexhash($src);
-      my %image = (
-#  ensure uniqueness of image db
-        _id => '',#MD5->hexhash($src),
-#        md5 => MD5->hexhash($src),
-        src => decode_base64url($src),
-        uploadDate => DateTime->now,
-        type => $type,
-      );
-
-      #  store everything the model sends
-      #
-      foreach my $name ($s->req->param) {
-        unless (exists $image{$name}) {
-          $image{$name} = $s->req->param($name);
-#          $s->app->log->debug("$name => $image{$name}");
-        }
-      }
-      try {
-        $s->mango->db->collection('images')->insert(
-          \%image
-        );
-      } finally {
-        if (@_) {
-          if ($_[0] eq 'E11000') {
-#            $s->render_json({error => 'duplicate image, this image already exists in our dB'});
-          } else {
-            $s->render_json({error => join("<br>",@_)});
-          }
-        } else {
-        }
-          $s->render_json({message => 'yep'});
-      };
-
-    } else {
-      $s->render_text('invalid upload!');
-    }
-  }
-}
 1;
