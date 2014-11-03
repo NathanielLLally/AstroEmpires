@@ -1,6 +1,5 @@
-AstroEmpires
-============
-
-beginnings of automating astro empires game- galaxy scanning, fleet movement<p>
-
-I code for fun, but when coding to automate a game one has to wonder where is priorities lie..
+aegis.user.js/css:
+  This is a web scraper for astro empires.  There is a graphical toolbox for user control, 
+  but generally it parses information and sends data to a central server
+ae_web:
+  Post drop for aegis and front end written with Mojolicious in perl
