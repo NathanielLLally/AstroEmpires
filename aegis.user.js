@@ -8,7 +8,7 @@
 // @include     *.astroempires.com/*
 // @exclude     *.astroempires.com/login.aspx
 // @exclude     *.astroempires.com/home.aspx
-// @version     0.8
+// @version     0.9
 // @grant       GM_xmlhttpRequest
 // @grant       GM_log
 // @grant       GM_setValue
@@ -18,13 +18,42 @@
 // @grant       GM_info
 // @grant       GM_addStyle
 // @grant       GM_getResourceText
+// @grant       GM_openInTab
 // ==/UserScript==
 
 /* global variables filled by dispatch */
 var server,serverURL,playerID,serverTime;
+//boards ad
+if (window.name == 'aswift_1') {
+  return;
+}
 
 var version = GM_info.script.version;
 console.log("running aegis v"+version);
+
+/* attempt at creating a tab */
+function setTabName()
+{
+  console.log("doc loc: "+document.location.href);
+  console.log("win doc loc: "+window.document.location.href);
+  if (window.document.location.href.match (/(.+?)astroempires.com/)) {
+    if (!window.name.match(/^aegis/)) {
+      var id = GM_getValue("aegisTabID", 0) + 1;
+      window.name = "aegis"+id;
+      GM_setValue("aegisTabID", id);
+    }
+  }
+  console.log("tab name: "+window.name);
+  console.log('next tabID:'+GM_getValue("aegisTabID", 0));
+}
+
+function getTabID()
+{
+  var id = window.name;
+  if (id.match(/^aegis(\d+)/)) {
+    return id.match(/^aegis(\d+)/)[1];
+  }
+}
 
 /* grease monkey info */
 if ('loading' == document.readyState) {
@@ -150,10 +179,9 @@ function sendToServer(data) {
   });
 }
 
-function getGalaxyXML(callback)
+function getGalaxyXML(galaxy, callback)
 {
   console.log('getGalaxyXML');
-  var galaxy = unsafeWindow.starsGalaxy;
   var galaxyNum = galaxy.match(/\d+/)[0];
   var rs = {
     server: server,
@@ -1550,6 +1578,7 @@ var sendQ = {
   url: [],
   msg: [],
   items: 0,
+  head: 0,
   push: function(url, msg) {
     if (url != null && msg != null) {
       console.log('pushing '+url+' and '+msg);
@@ -1557,6 +1586,55 @@ var sendQ = {
       this['msg'].push(msg);
       this['items']++;
     }
+  },
+  pushGM: function(url, msg) {
+    var tag = 'sendQ:'+ getTabID();
+    var tail = GM_getValue(tag+':tail',0);
+    GM_setValue(tag +':url:'+tail, url)
+    GM_setValue(tag +':msg:'+tail, msg);
+    console.log("set "+tag +':url:'+tail + ":"+url);
+
+    GM_setValue(tag+':tail',++tail);
+    console.log("new tail "+ GM_getValue(tag+':tail',0));
+  },
+  shiftGM: function() {
+    var tag = 'sendQ:'+ getTabID();
+    var head = GM_getValue(tag+':head',0);
+    var tail = GM_getValue(tag+':tail',0);
+    var url = GM_getValue(tag +':url:'+head, '');
+    var msg = GM_getValue(tag +':msg:'+head, '');
+    console.log('head '+head+ ' url '+url);
+
+    if (url.length > 0 && msg.length > 0) {
+      GM_deleteValue(tag +':url:'+head);
+      GM_deleteValue(tag +':msg:'+head);
+      GM_setValue(tag+':head',++head);
+
+      if (head == tail) {
+        GM_setValue(tag+':tail',0);
+        GM_setValue(tag+':head',0);
+      }
+      console.log('new head '+head + ', tail '+tail);
+      var ret = [url, msg];
+      return ret;
+    }
+  },
+  clearGM: function() {
+    var tag = 'sendQ:'+ getTabID();
+    var head = GM_getValue(tag+':head',0);
+    var tail = GM_getValue(tag+':tail',0);
+    for (var i = head; i <= tail; i++) {
+      GM_deleteValue(tag +':url:'+i);
+      GM_deleteValue(tag +':msg:'+i);
+    }
+    GM_setValue(tag+':tail',0);
+    GM_setValue(tag+':head',0);
+  },
+  lengthGM: function () {
+    var tag = 'sendQ:'+ getTabID();
+    var head = GM_getValue(tag+':head',0);
+    var tail = GM_getValue(tag+':tail',0);
+    return (tail - head);
   },
   shift: function() {
     var ret = [];
@@ -1582,30 +1660,32 @@ var sendQ = {
 var alarm;
 function sendQueued(onloadCB, doneMsg)
 {
-  if (sendQ.url.length <= 0) {
+  var tag = 'sendQ:'+ getTabID();
+  if (sendQ.lengthGM() <= 0) {
     if (alarm != null) {
       window.clearTimeout(alarm);
       console.log('cleared timeout');
     }
-    console.log('returning from sendQueued urls:'+sendQ.url.length);
+    console.log('returning from sendQueued urls:'+sendQ.lengthGM());
     return;
   }
   //return if we havent passed wait time
-  if ((new Date().getTime()) < parseInt(GM_getValue('sendQ:waitFor', '0'))) {
-    console.log('sendQ called prematurely urls:'+sendQ.url.length);
+  if ((new Date().getTime()) < parseInt(GM_getValue(tag+':waitFor', '0'))) {
+    console.log('sendQ called prematurely urls:'+sendQ.lengthGM());
     return;
   }
   //set a wait time in the future
   var min = 500, max = 3000;
   var waitMS = Math.floor(Math.random() * (max - min)) + min;
-  GM_setValue('sendQ:waitFor', (new Date().getTime()) + waitMS);
+  console.log('setting wait '+waitMS+ ' for '+tag + ' len '+sendQ.lengthGM());
+  GM_setValue(tag+':waitFor', (new Date().getTime()) + waitMS);
 
   //call again after wait time
   alarm = window.setTimeout( function() { sendQueued(onloadCB, doneMsg); }, waitMS + 100);
 
-    console.log('urls:'+sendQ.url.length);
+//    console.log('urls:'+sendQ.lengthGM);
 //  console.log(' items pre shift '+sendQ.items);
-  var tuple = sendQ.shift();
+  var tuple = sendQ.shiftGM();
 //  console.log('tuple '+tuple);
 //  console.log(' items post shift '+sendQ.items);
   var url = tuple[0];
@@ -1621,7 +1701,7 @@ function sendQueued(onloadCB, doneMsg)
       return function(resp) {
         onloadCB(url, resp.responseText);
 
-        if (sendQ.url.length > 0) {
+        if (sendQ.lengthGM() > 0) {
   //        sendQueued(onloadCB, doneMsg);
 //  var t = window.setTimeout( function() { sendQueued(onloadCB, doneMsg); },
 //      Math.floor(Math.random() * (max - min)) + min );
@@ -1648,11 +1728,11 @@ function queueGet(url, msg)
   if (typeof(url) == "string") {
     if (url.match(re)) {
       console.log('queueing '+url+' msg '+msg);
-      sendQ.push(url, msg);
+      sendQ.pushGM(url, msg);
     } else {
       url = serverURL + "/" + url;
       console.log('queueing '+url+' msg '+msg);
-      sendQ.push(url, msg);
+      sendQ.pushGM(url, msg);
     }
   }
 }
@@ -1666,10 +1746,11 @@ function scanRegion()
 //      .match(/[A-Za-z][0-9]{2}:[0-9]{2}/)) {
     systems = GM_getValue("starMap:"+curGalReg.textContent);
     if (!exists(systems)) {
-      getGalaxyXML(scanRegion);
+      var gal = curGalReg.textContent.match(/[A-Za-z][0-9]{2}/)[0];
+      getGalaxyXML(gal, scanRegion);
       return;
     }
-    consoleMsg("<span class='infoMsg'>scanning region"+curGalReg+"</span>");
+    consoleMsg("<span class='infoMsg'>scanning region"+curGalReg.textContent+"</span>");
   } else {
     consoleMsg("<span class='errorMsg'>no region selected!</span>");
     return;
@@ -1807,8 +1888,9 @@ function doResources()
 }
 
 doResources();
+setTabName();
 checkForUpdate();
 checkSendBufferCache();
-
 dispatch(document.URL, document, false);
+
 console.log("aegis ran successfully");
