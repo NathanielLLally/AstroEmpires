@@ -22,11 +22,28 @@ sub storeData
 
   my $dtServer = DateTime::Format::DateManip->parse_datetime(ParseDate($time));
 
+#  for now i dont want old data
+#
   if (defined $daysOld) {
     my $dtData = $dtServer->clone->subtract(days => $daysOld);
+    return;
   }
 
-  #$s->app->log->debug(Dumper(\$ae));
+  if (exists $ae->{url} and exists $ae->{msg} and exists $ae->{stack}) {
+    my $sth = $dbh->prepare(qq/
+      insert into aegisErrors (server, time, playerID, url, msg, stack)
+      values(?,?,?,?,?,?)
+      on duplicate key update
+        time      = values(time),
+        count = (count +1)
+       /);
+    try {
+      $sth->execute($server, $time, $playerId, $ae->{url}, $ae->{msg}, $ae->{stack});
+    } catch {
+      die "error insert: $_";
+    };
+    return;
+  }
 
   foreach my $dbTable (keys %$ae) {
     if ($dbTable eq 'player') {
@@ -109,9 +126,9 @@ sub storeData
 
         my $sth = $dbh->prepare(qq/
         insert into base
-          (server,time,playerId,id,name,location,owner,occupier,economy,ownerIncome,tradeRoutes,barracks,laserTurrets,missileTurrets,ionTurrets,photonTurrets,disruptorTurrets,deflectionShields,planetaryShields,planetaryRing,commandCenters,jumpGate)
+          (server,time,playerId,id,name,location,owner,occupier,economy,ownerIncome,tradeRoutes,commandCenters,jumpGate)
         values
-          (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          (?,?,?,?,?,?,?,?,?,?,?,?,?)
         on duplicate key update
           time      = values(time),
           name      = ifnull(values(name),name),
@@ -141,6 +158,13 @@ sub storeData
           $sth->execute();
         } catch {
           die "base upsert: $_";
+        };
+
+        $sth = $dbh->prepare(qq/update astro set base = ? where server = ? and location = ?/);
+        try {
+          $sth->execute($id, $server, $e->{location});
+        } catch {
+          warn "astro base update: $_";
         };
 
         if (exists $e->{defenses}) {
@@ -186,6 +210,17 @@ sub storeData
     } elsif ($dbTable eq 'fleet') {
       foreach my $id (keys %{$ae->{$dbTable}}) {
         my $e = $ae->{$dbTable}->{$id};
+# parseMapFleet
+        if (not exists $e->{ships}) {
+          my $sth = $dbh->prepare(qq/
+              delete from fleet where server = ? and location = ?
+              /);
+          try {
+            $sth->execute($server, $e->{location});
+          } catch {
+            die "removing fleet: $_";
+          };
+        }
 
         my $sth = $dbh->prepare(qq/
         insert into fleet

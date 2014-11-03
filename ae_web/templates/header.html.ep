@@ -1,13 +1,42 @@
 %= javascript begin
-      $(function() {
-        $('a[rel*=leanModal]').leanModal({ top : 200, closeButton: ".modal_close" });   
-        });
+  $(function() {
+    $('a[rel*=leanModal]').leanModal({ top : 200, closeButton: ".modal_close" });   
+  });
+  function submitForm(form) {
+    document.forms[form].submit();
+  }
+ 
 %= end
 
 <div class="main">
   <div class="panel">
+
+% my $d;
+% if (my $playerID = stash 'playerID') {
+% foreach my $view (@$procs) {
+%   my $v = $view;
+%   $view =~ s/([A-Z])/ $1/g;
+  <span class="pbutton">
+  <a href='<%= url_for("/ae/gis/displayProc/$v") %>'><%= $view %></a>
+  </span>
+% }
+    <a id="go" name="logout" href="/ae/logout">Logout</a>
+  <form action="/ae/select/server" name="frmServerSelect" method="post" onChange="submitForm('frmServerSelect')">
+  <select name="server">
+% foreach my $svr (@$servers) {
+%   my $s = '';  
+%   if (my $server = stash 'server') {
+%     if ($server eq $svr) { $s = " selected"; }
+%   }
+    <option value="<%= $svr %>" <%= $s %>><%= $svr %></option>
+% }
+  </select>
+  </form>
+% } else {
+
     <a id="go" name="login" rel="leanModal" href="#login">Log In</a>
     <a id="go" name="signup" rel="leanModal" href="#register">Sign Up</a>
+% }
     </div>
 
     <div id="login">
@@ -18,17 +47,17 @@
           <a class="modal_close" href="#"></a>
         </div>
 
-            <form action="">
+        <form action="/ae/login" method="post">
+
+          <div class="txt-fld">
+            <label for="POST-playerID">PlayerID</label>
+            <input id="POST-playerID" class="good_input" name="playerID" type="text" />
+
+          </div>
 
             <div class="txt-fld">
-            <label for="">PlayerID</label>
-            <input id="" class="good_input" name="" type="text" />
-
-            </div>
-
-            <div class="txt-fld">
-            <label for="">Password</label>
-            <input id="" name="" type="text" />
+            <label for="POST-password">Password</label>
+            <input id="POST-pasword" name="password" type="text" />
 
             </div>
             <div class="btn-fld">

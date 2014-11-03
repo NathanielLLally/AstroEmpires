@@ -32,12 +32,13 @@ sub startup {
 
   # Normal route to controller
   $r->any('/ae')->to(controller => 'main', action => 'index');
+  $r->get('/ae/gis')->to(controller => 'main', action => 'index');
   $r->any('/ae/gis/displayView/:view')->to(controller => 'main', action => 'displayView');
-  $r->any('/upload/:name')->to('main#upload');
-  $r->get('/ae/login')->to(controller => 'main', action => 'login');
-  $r->post('/ae/gis')->to(controller => 'main', action => 'dumpPostData');
-  $r->get('/ae/gis')->to(controller => 'example', action => 'welcome');
-
+  $r->any('/ae/gis/displayProc/:proc')->to(controller => 'main', action => 'displayProc');
+  $r->post('/ae/login')->to(controller => 'main', action => 'login');
+  $r->post('/ae/select/server')->to(controller => 'main', action => 'select');
+  $r->any('/ae/logout')->to(controller => 'main', action => 'logout');
+  $r->post('/ae/gis')->to(controller => 'store', action => 'dumpPostData');
 }
 
 1;

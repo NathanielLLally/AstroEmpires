@@ -14,7 +14,5 @@
 <body>
 %= include 'header'
   <%= content %>
-
-%= include 'common_js'
 </body>
 </html>

@@ -2,32 +2,154 @@ package AeWeb::Controller::Main;
 use Mojo::Base 'Mojolicious::Controller';
 use Mojo::IOLoop;
 use Mojo::Util qw/dumper/;
+#use Mojolicious::Session;
 use URI::Escape;
 use URI;
 use DBI;
 use Try::Tiny;
+use Data::Dumper;
 
-sub index {
+sub getServers {
   my $s = shift;
-
   my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
-
   my (@headers, $sth, $rs);
+  my @servers;
+  $sth = $dbh->prepare_cached("select distinct server from astro");
+  $sth->execute();
+  $rs = $sth->fetchall_arrayref();
+  foreach my $row (@$rs) {
+    push @servers, $row->[0];
+  }
+  $s->stash( servers => \@servers);
+}
+
+sub getViews {
+  my $s = shift;
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+  my (@headers, $sth, $rs);
+
+#  header.html.ep wants a list of database views
+#
   $sth = $dbh->table_info('', 'ae', undef, "VIEW");
   $rs = $sth->fetchall_arrayref();
   my @views;
   foreach my $row (@$rs) {
     my $view = $row->[2];
-    $view =~ s/^v//;
-    push @views, $view;
+    if ($view =~ /^v/) {
+      $view =~ s/^v//;
+      push @views, $view;
+    }
   }
 
-  my $view = $s->req->url->path;
+  $s->stash(
+    views => \@views,
+  );
+}
+
+sub getProcs {
+  my $s = shift;
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+  my (@headers, $sth, $rs);
+
+#  header.html.ep wants a list of database views
+#
+  $sth = $dbh->prepare("show procedure status");
+  $sth->execute();
+  $rs = $sth->fetchall_arrayref();
+  my @proc;
+  foreach my $row (@$rs) {
+    my $el = $row->[1];
+    if ($el =~ /^p/) {
+      $el =~ s/^p//;
+    }
+    push @proc, $el;
+#    $s->app->log->debug(Dumper($row));
+  }
+
+  $s->stash(
+    procs => \@proc,
+  );
+}
+
+sub index {
+  my $s = shift;
+  $s->getServers;
+  $s->getViews;
+  $s->getProcs;
+
+  $s->stash(playerID => $s->session('playerID'));
+  $s->stash(server => $s->session('server'));
+
   $s->render;
+}
+
+sub displayProc {
+  my $s = shift;
+  $s->getServers;
+  $s->getProcs;
+  $s->getViews;
+
+  $s->stash(playerID => $s->session('playerID'));
+  $s->stash(server => $s->session('server'));
+
+  $s->app->log->debug("sesh pid: ".$s->session->{playerID});
+
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+
+  my $proc = $s->req->url->path;
+  $proc =~ s/.*\///;
+  $s->app->log->debug("showing proc p$proc");
+
+  my (@headers, $sth, $rs);
+
+  $sth = $dbh->prepare("call p$proc(?,?)");
+  try {
+    $sth->execute($s->session('server'), $s->session('playerID'));
+  } catch {
+    die "call error: $_";
+  };
+  @headers = @{ $sth->{NAME} };
+  $rs = $sth->fetchall_arrayref();
+
+  my $shortFieldName = {
+    guildTag => 'tag',
+    ownerTag => 'tag',
+    occupier => 'occ',
+    occupierTag => 'tag',
+    economy => 'econ',
+    ownerIncome => 'inc %',
+    tradeRoutes => 'trades',
+    jumpGate => 'jg',
+    commandCenters => 'cc',
+    barracks => 'b',
+    laserTurrets => 'lt',
+    missileTurrets => 'mt',
+    ionTurrets => 'it',
+    photonTurrets => 'pt',
+    disruptorTurrets => 'dt',
+    deflectionShields => 'ds',
+    planetaryShields => 'ps',
+    planetaryRing => 'pr',
+  };
+
+  $s->stash(
+    procName => $proc,
+    shortFieldName => $shortFieldName,
+    headers => \@headers,
+    resultSet => $rs,
+  );
+  $s->render(template => 'main/displayProc');
 }
 
 sub displayView {
   my $s = shift;
+  $s->getServers;
+  $s->getViews;
+
+  $s->stash(playerID => $s->session('playerID'));
+  $s->stash(server => $s->session('server'));
+
+  $s->app->log->debug("sesh pid: ".$s->session->{playerID});
 
   my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
 
@@ -37,6 +159,8 @@ sub displayView {
 
   my (@headers, $sth, $rs);
 
+  #  i want the columns in the order specified by view
+  #
   $sth = $dbh->column_info('ae', "v$view", undef, undef);
   $rs = $sth->fetchall_arrayref();
   foreach my $row (@$rs) {
@@ -75,19 +199,52 @@ sub displayView {
     viewName => $view,
     shortFieldName => $shortFieldName,
     headers => \@headers,
-    resultSet => $rs
+    resultSet => $rs,
   );
   $s->render(template => 'main/displayView');
 }
 
+sub select {
+  my $s = shift;
+  $s->getServers;
+  $s->getViews;
+
+  $s->stash(playerID => $s->session('playerID'));
+
+  my $server = $s->req->param('server');
+  $s->session(server => $server);
+  $s->stash(server => $server);
+
+  $s->redirect_to($s->req->headers->referrer);
+}
+
 sub login {
   my $s = shift;
-  
+  $s->getServers;
+  $s->getViews;
+
+#  my $sesh = Mojolicious::Sessions->new;
+#  $sesh->cookie_name('aegis');
+#  $sesh->default_expiration(86400);
+#  $sesh->store
+ 
+  my $pid = $s->req->param('playerID');
+  $s->session(playerID => $pid);
+  $s->stash(playerID => $pid);
+
   $s->app->log->debug("routed to login correctly");
   foreach my $name ($s->req->param) {
     $s->app->log->debug("$name => ".$s->req->param($name));
   }
-  $s->render;
+  $s->redirect_to('/ae');
+}
+
+sub logout {
+  my $s = shift;
+  $s->getServers;
+  $s->getViews;
+  delete $s->session->{playerID};
+  $s->redirect_to('/ae');
 }
 
 sub showImages {
