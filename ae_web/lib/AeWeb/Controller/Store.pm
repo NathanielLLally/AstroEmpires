@@ -43,6 +43,19 @@ sub storeData
       die "error insert: $_";
     };
     return;
+  } elsif (exists $ae->{regionStars}) {
+    my $sth = $dbh->prepare(qq/
+      insert into regionStars (server, starLoc) values (?,?)
+      /);
+
+    foreach my $starLoc (@{ $ae->{regionStars} }) 
+    {
+      try {
+        $sth->execute($server, $starLoc);
+      } catch {
+        die "regionStars insert: $_";
+      };
+    }
   }
 
   foreach my $dbTable (keys %$ae) {

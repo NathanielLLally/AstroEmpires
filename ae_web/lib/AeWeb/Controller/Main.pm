@@ -85,6 +85,11 @@ sub index {
 
 sub displayProc {
   my $s = shift;
+  if (not $s->session('playerID')) {
+    $s->redirect_to('/ae');
+    return;
+  }
+
   $s->getServers;
   $s->getProcs;
   $s->getViews;
@@ -112,6 +117,8 @@ sub displayProc {
   $rs = $sth->fetchall_arrayref();
 
   my $shortFieldName = {
+    starLoc => 'system',
+    lastScan => 'last scan',
     guildTag => 'tag',
     ownerTag => 'tag',
     occupier => 'occ',
@@ -143,6 +150,11 @@ sub displayProc {
 
 sub displayView {
   my $s = shift;
+  if (not $s->session('playerID')) {
+    $s->redirect_to('/ae');
+    return;
+  }
+
   $s->getServers;
   $s->getViews;
 
@@ -206,6 +218,11 @@ sub displayView {
 
 sub select {
   my $s = shift;
+  if (not $s->session('playerID')) {
+    $s->redirect_to('/ae');
+    return;
+  }
+
   $s->getServers;
   $s->getViews;
 

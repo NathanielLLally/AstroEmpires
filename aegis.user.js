@@ -8,7 +8,7 @@
 // @include     *.astroempires.com/*
 // @exclude     *.astroempires.com/login.aspx
 // @exclude     *.astroempires.com/home.aspx
-// @version     0.5
+// @version     0.8
 // @grant       GM_xmlhttpRequest
 // @grant       GM_log
 // @grant       GM_setValue
@@ -155,6 +155,10 @@ function getGalaxyXML(callback)
   console.log('getGalaxyXML');
   var galaxy = unsafeWindow.starsGalaxy;
   var galaxyNum = galaxy.match(/\d+/)[0];
+  var rs = {
+    server: server,
+    regionStars: []
+  };
 
  GM_xmlhttpRequest({
     method: "GET",
@@ -173,6 +177,7 @@ function getGalaxyXML(callback)
             var matches, regex = /(\d+).*?;/g, systems = [];
             while (matches = regex.exec($(this).text())) {
               systems.push(matches[1]);
+              rs.regionStars.push(galaxy+":"+region+":"+matches[1]);
             }
             console.log('setvalue '+'starMap:'+galaxy+":"+region + " = " + systems.join(":"));
             GM_setValue('starMap:'+galaxy+":"+region, systems.join(":"));
@@ -180,6 +185,7 @@ function getGalaxyXML(callback)
           });
           //console.log($stars.text);
         });
+        sendToServer(rs);
 
         callback(); 
       } else {
@@ -243,6 +249,15 @@ function getElement(obj){
 	
 	return obj;
 }
+function toggleHeight (obj){
+    console.log(obj.style.height);
+  if (obj.style.height == "155px") {
+    obj.style.height = "80%";
+  } else {
+    obj.style.height = "155px";
+  }
+}
+
 function toggle (obj, displayType, state){
 	if (displayType == null || displayType == undefined)
 		displayType = "block";
@@ -331,7 +346,13 @@ function updateGalaxyRegion () {
   var region = unsafeWindow.mapCurrentRegion;
   var galaxy = unsafeWindow.starsGalaxy;
   if (galaxy == null) {
-    return;
+    if (document.URL.match(/([A-Za-z][0-9]{2}):([0-9]{2})/)) {
+      var gr = document.URL.match(/([A-Za-z][0-9]{2}):([0-9]{2})/);
+      galaxy = gr[1];
+      region = gr[2];
+    } else {
+      return;
+    }
   }
   curGalReg.innerHTML = galaxy;
   if (region != null) {
@@ -399,11 +420,11 @@ function consoleMsg(msg, level)
 		aconsole.id = "aegisConsole";
     aconsole.className = 'aegisConsole';
 		
-	//	var consoleClick = function(){ hide(console); };
+		var consoleClick = function(){ toggleHeight(aconsole); };
 		//var pageScroll = function(){ console.style.left = getScrollX()+"px"; console.style.top = getScrollY()+"px"; };
 		
 		//set events
-//		registerEvent(console, "click", consoleClick);
+		registerEvent(aconsole, "click", consoleClick);
 		//registerEvent(document.body, "scroll", pageScroll);
 		//window.onscroll = pageScroll;
 	
@@ -927,7 +948,7 @@ function fieldPlayerFromLink(aeData, link)
 }
 
 function parseMapFleet(aeData, table, location, follow) {
-  consoleMsg('parseMapFleet');
+  consoleMsg('parseMapFleet '+location);
     
 //    console.log(xml2string(table));
     
@@ -986,8 +1007,10 @@ function parseScanner(aeData, url, doc, follow){
 
 
 function parseFleet(aeData, url, doc) {
-  consoleMsg('parseFleet');
   var dtRow = {};
+  dtRow['id'] = url.match(/fleet.aspx\?fleet=(\d+)/)[1];
+  consoleMsg('parseFleet '+ dtRow['id'] );
+  
   
   var tables = doc.getElementsByTagName('table');
   var playerAndLoc;
@@ -1032,8 +1055,6 @@ function parseFleet(aeData, url, doc) {
   
   //console.log(xml2string(document.getElementById('fleet_overview')));
   
-  dtRow['id'] = url.match(/fleet.aspx\?fleet=(\d+)/)[1];
-  
   var fleetTable = doc.getElementById('fleet_overview').getElementsByTagName('table')[0];
   var tr = fleetTable.getElementsByTagName('tr');
   var ships = {};
@@ -1055,13 +1076,14 @@ function parseFleet(aeData, url, doc) {
 }
 
 function parseAstro(aeData, url, doc, follow) {
-  consoleMsg('parseAstro');
-  console.log('parseAstro');
 
+  var location = url.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
+  consoleMsg('parseAstro '+location);
+  console.log('parseAstro');
+  
   var aRow = {};
   var el = doc.getElementsByClassName('astro')[0];
-  var location = url.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
-  
+
    console.log(el.textContent);
    aRow['type'] = el.textContent.match(/(Astro Type: (.*?)Terrain)/)[2];
    aRow['terrain'] = el.textContent.match(/(Terrain: (.*?)Area)/)[2];
@@ -1101,10 +1123,9 @@ function parseAstro(aeData, url, doc, follow) {
          
      }
      
-     aeData.add('astro',aRow);
-    
      aeData.add('base',dtRow);
   }
+  aeData.add('astro',aRow);
     
   var mapfleet = doc.getElementById('map_fleets');
   if (mapfleet != null) {
@@ -1127,7 +1148,11 @@ function checkDaysOld(aeData, doc)
 }
 
 function parseSystem(aeData, url, doc, follow) {
-  consoleMsg('parseSystem');
+  var system = url.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}/);
+  if (!system) {
+    return;
+  }
+  consoleMsg('parseSystem '+system[0]);
   var astroRow = {};
   var baseRow = {};
   var fleetRow = {};
@@ -1237,7 +1262,6 @@ function parseSystem(aeData, url, doc, follow) {
 }
 
 function parseBase(aeData, url, doc, follow) {
-  consoleMsg('parseBase');
 
   if (! url.match(/base\.aspx\?base=(\d+)(&view=)?$/)) {
     return;
@@ -1245,6 +1269,7 @@ function parseBase(aeData, url, doc, follow) {
 
   var baseRow = {};
   baseRow['id'] = matchFirstPos(url, /base\.aspx\?base=(\d+)/);
+  consoleMsg('parseBase '+ baseRow['id']);
 
   var tables = doc.getElementsByTagName('table');
   if (tables != null && tables.length > 0) {
@@ -1329,11 +1354,13 @@ function parseBase(aeData, url, doc, follow) {
     }
   }
 
-  var tblFleets = doc.getElementById('base_fleets');
-  if (tblFleets != null && tblFleets.length > 0) {
-    tblFleets = tblFleets.getElementsByTagName('table')[0];
-
-    parseMapFleet(aeData, tblFleets, baseRow['location'], follow);
+  var baseFleets = doc.getElementById('base_fleets');
+  if (baseFleets != null) {
+    console.log('has base_fleets');
+    var tblFleets = baseFleets.getElementsByTagName('table');
+    if (tblFleets != null && tblFleets.length > 0) {
+      parseMapFleet(aeData, tblFleets[0], baseRow['location'], follow);
+    }
   }
 
   var tblStru = doc.getElementById('base_resume-structures');
@@ -1380,7 +1407,7 @@ function parseBase(aeData, url, doc, follow) {
 
 function parseEmpire(aeData, url, doc)
 {
-  consoleMsg('parseEmpire');
+  consoleMsg('parseEmpire player '+playerID);
   var baseRow = {};
   
   var table = doc.getElementById('empire_events').getElementsByTagName('table')[0];
@@ -1413,6 +1440,7 @@ function parseEmpire(aeData, url, doc)
 
 function parseGuild(aeData, url, doc)
 {
+  consoleMsg('parseGuild player '+playerID);
   var playerRow = {};
   var guild = {};
   //guild
@@ -1522,7 +1550,7 @@ var sendQ = {
   url: [],
   msg: [],
   items: 0,
-  pushT: function(url, msg) {
+  push: function(url, msg) {
     if (url != null && msg != null) {
       console.log('pushing '+url+' and '+msg);
       this['url'].push(url);
@@ -1530,19 +1558,20 @@ var sendQ = {
       this['items']++;
     }
   },
-  shiftT: function() {
+  shift: function() {
     var ret = [];
     ret.push(this['url'].shift());
     ret.push(this['msg'].shift());
     console.log('shifted '+ret);
     return ret;
+  },
+  clear: function() {
+    this.url = [];
+    this.msg = [];
+    this.items = 0;
+    console.log('sendQ cleared');
   }
 };
-  sendQ.watch('url.length', function(id, oldval, newval) {
-    console.log('sendQ.' + id + ' changed from ' + oldval + ' to ' + newval);
-    return newval;
-  });
-
   sendQ.watch('items', function(id, oldval, newval) {
     console.log('sendQ.' + id + ' changed from ' + oldval + ' to ' + newval);
     console.log('items in watch '+sendQ.items);
@@ -1550,9 +1579,14 @@ var sendQ = {
     return newval;
   });
 
+var alarm;
 function sendQueued(onloadCB, doneMsg)
 {
   if (sendQ.url.length <= 0) {
+    if (alarm != null) {
+      window.clearTimeout(alarm);
+      console.log('cleared timeout');
+    }
     console.log('returning from sendQueued urls:'+sendQ.url.length);
     return;
   }
@@ -1562,16 +1596,16 @@ function sendQueued(onloadCB, doneMsg)
     return;
   }
   //set a wait time in the future
-  var min = 500, max = 5000;
+  var min = 500, max = 3000;
   var waitMS = Math.floor(Math.random() * (max - min)) + min;
   GM_setValue('sendQ:waitFor', (new Date().getTime()) + waitMS);
 
   //call again after wait time
-  var t = window.setTimeout( function() { sendQueued(onloadCB, doneMsg); }, waitMS + 100);
+  alarm = window.setTimeout( function() { sendQueued(onloadCB, doneMsg); }, waitMS + 100);
 
     console.log('urls:'+sendQ.url.length);
 //  console.log(' items pre shift '+sendQ.items);
-  var tuple = sendQ.shiftT();
+  var tuple = sendQ.shift();
 //  console.log('tuple '+tuple);
 //  console.log(' items post shift '+sendQ.items);
   var url = tuple[0];
@@ -1614,11 +1648,11 @@ function queueGet(url, msg)
   if (typeof(url) == "string") {
     if (url.match(re)) {
       console.log('queueing '+url+' msg '+msg);
-      sendQ.pushT(url, msg);
+      sendQ.push(url, msg);
     } else {
       url = serverURL + "/" + url;
       console.log('queueing '+url+' msg '+msg);
-      sendQ.pushT(url, msg);
+      sendQ.push(url, msg);
     }
   }
 }
@@ -1635,6 +1669,7 @@ function scanRegion()
       getGalaxyXML(scanRegion);
       return;
     }
+    consoleMsg("<span class='infoMsg'>scanning region"+curGalReg+"</span>");
   } else {
     consoleMsg("<span class='errorMsg'>no region selected!</span>");
     return;
@@ -1654,6 +1689,7 @@ function scanRegion()
 /********************************************************************************************************
 */
 function dispatch(url, doc, follow) {
+  url = decodeURIComponent(url);
   console.log('dispatching '+url );
   if (url.match(/(.+?)astroempires.com/)) {
 
@@ -1693,6 +1729,7 @@ function dispatch(url, doc, follow) {
       if (Object.keys(this).length > 5) {
         return 1;
       } else {
+    //    console.log(JSON.stringify(aeData));
         return 0;
       }
     }
@@ -1706,13 +1743,15 @@ function dispatch(url, doc, follow) {
 
   try {
     if (url.match(/astroempires\.com/)) {
-      var daysOld = checkDaysOld(aeData, doc);
-      if (daysOld) {
-        consoleMsg("data is "+daysOld+" days old");
-      }
       freeAccountRemoveAd(doc);
       replaceTime(doc);
 
+      var daysOld = checkDaysOld(aeData, doc);
+      if (daysOld != null) {
+        sendQ.clear;
+        consoleMsg("data is "+daysOld+" days old");
+        return;
+      }
       if (url.match(/view=scanners/)) { 
         parseScanner(aeData, url, doc, follow);
 
@@ -1739,7 +1778,6 @@ function dispatch(url, doc, follow) {
         parseGuild(aeData, url, doc, follow);
       }
 
-      //console.log(JSON.stringify(aeData));
       if (aeData.hasData()) {
         sendToServer(aeData);
       }
@@ -1749,7 +1787,16 @@ function dispatch(url, doc, follow) {
   } catch(e) {
     console.log(e);
     consoleMsg(e.stack); 
-    consoleMsg(e.message); 
+    consoleMsg(e.message);
+    var errorMsg = {
+      "server": server,
+      "time": serverTime,
+      "playerID": playerID,
+      "msg": e.message,
+      "stack": e.stack,
+      "url": url
+    };
+    sendToServer(errorMsg);
   }
 }
 
