@@ -1,4 +1,5 @@
 package AeWeb::Controller::Store;
+use AeWeb::Schema;
 use Mojo::Base 'Mojolicious::Controller';
 use Mojo::JSON;
 use Mojo::IOLoop;
@@ -10,12 +11,29 @@ use DBI;
 use Try::Tiny;
 use DateTime::Format::DateManip;
 use Date::Manip;
+use Data::Dumper;
+
+sub dbh
+{
+  my $s = shift;
+  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+  $dbh;
+}
+
+#  replicate aeBravo schemas and triggers
+#  show create table
+#
+sub createDatabase
+{
+  my ($s, $db) = @_;
+  my $dbh = $s->dbh;
+  $dbh->do();
+}
 
 sub storeData
 {
   my ($s, $ae) = @_;
-
-  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
+  my $dbh = $s->dbh;
 
   my ($server, $time, $playerId, $daysOld) = ($ae->{'server'}, $ae->{'time'}, $ae->{'playerID'}, $ae->{daysOld});
   map { delete $ae->{$_}; } qw/server time playerID daysOld/;
@@ -26,7 +44,15 @@ sub storeData
 #
   if (defined $daysOld) {
     my $dtData = $dtServer->clone->subtract(days => $daysOld);
+      $s->app->log->debug("data is old, not storing");
     return;
+  }
+  if (exists $ae->{astro}) {
+    my ($key, $value) = each %{ $ae->{astro} };
+    if (exists $ae->{astro}->{$key}->{daysOld}) {
+      $s->app->log->debug("data is old, not storing");
+      return;
+    }
   }
 
   if (exists $ae->{url} and exists $ae->{msg} and exists $ae->{stack}) {
@@ -265,7 +291,7 @@ sub storeData
         my $arrival = undef;
         if (exists $e->{arrival}) {
           my $dtArrival = $dtServer->clone->add(seconds => $e->{arrival});
-          $arrival = $dtArrival->strftime("%Y-%m-%d %I:%M:%S %p");
+          $arrival = $dtArrival->strftime("%Y-%m-%d %H:%M:%S");
         }
         $sth->bind_param($i++, $arrival);
 
@@ -285,13 +311,179 @@ sub storeData
   }
 }
 
+sub schema
+{
+  my ($s,$server) = (@_);
+  my ($db, $key, $schema) = ($server,'_schema_',undef);
+  $db =~ s/^(\S)/ae\u$1/;
+  $key .= $db;
+
+  $schema = $s->{$key};
+  if (defined $schema) {
+    $schema->storage->ensure_connected;
+  } else {
+    try {
+      $schema = $s->{$key} = AeWeb::Schema->connect("dbi:mysql:$db", 'ae', 'q1w2e3r4');
+    } catch {
+      if ($_ =~ /Unknown database/) {
+        $s->createDatabase($db);
+      }
+    };
+    $schema->storage->debugfh(IO::File->new('/tmp/trace.out', 'w'));
+    $schema->storage->debug(1);
+  }
+  $schema;
+}
+
+sub storeDataC
+{
+  my ($s, $ae) = @_;
+  my ($server, $time, $playerID, $daysOld) = 
+    map { $ae->{$_}; } qw/server time playerID daysOld/;
+
+  my $schema = $s->schema($server);
+  my $dtServer = DateTime::Format::DateManip->parse_datetime(ParseDate($time));
+
+  my $guildTag = '[SoL]';
+  my $dbPlayer = $schema->resultset('Player')->find($playerID);
+  if (defined $dbPlayer) {
+    $guildTag = $dbPlayer->guildTag;
+  }
+  if (defined $daysOld) {
+    my $dtData = $dtServer->clone->subtract(days => $daysOld);
+    $time = $dtData->strftime("%Y-%m-%d %H:%M:%S");
+  }
+
+  if (exists $ae->{player}) {
+    foreach my $id (keys %{$ae->{player}}) {
+      my $e = $ae->{player}->{$id};
+      my $guild = $e->{guild};
+      $schema->resultset('Player')->update_or_create({
+        id => $id,
+        name => $e->{name},
+        level => $e->{level},
+        upgraded => $e->{upgraded},
+        guildTag => $guild->{tag},
+        defaultServer => $server,
+        });
+    }
+  }
+
+  if (exists $ae->{astro}) {
+    foreach my $location (keys %{$ae->{astro}}) {
+      my $e = $ae->{astro}->{$location};
+
+      my %col = map { $_ => $e->{$_} } qw/terrain type/;
+      $col{location} = $location,
+      $col{time} = $time;
+      $col{guildTag} = $guildTag;
+      
+      my $dbAstro = $schema->resultset('Astro')->update_or_create(%col);
+    }
+
+    $schema->resultset('PlayerUsage')->update_or_create(
+        {id => $dbPlayer->id, name => 'astroScan', last => $time});
+  }
+
+  if (exists $ae->{base}) {
+    foreach my $id (keys %{$ae->{base}}) {
+      my $e = $ae->{base}->{$id};
+      my %col = map { $_ => $e->{$_} } qw/location owner occupier/;
+      $col{id} = $id;
+      $col{time} = $time;
+      $col{guildTag} = $guildTag;
+
+      my $dbBase =  $schema->resultset('Base')->update_or_create(%col);
+
+      #  possibly not in packet
+      #
+      %col = map { $_ => $e->{$_} } 
+        grep {exists $e->{$_}} qw/name economy ownerIncome tradeRoutes/;
+
+      if (keys %col) {
+        $col{time} = $time;
+        $col{guildTag} = $guildTag;
+        $dbBase->update_or_create_related('detail', %col);
+      }
+
+      if (exists $e->{structures}) {
+        my $e = $e->{structures};
+        foreach (keys %$e) {
+          %col = (
+            name => $_,
+            number => $e->{$_},
+            time => $time,
+            guildTag => $guildTag,
+            );
+          $dbBase->update_or_create_related('structures', %col);
+        }
+
+        $schema->resultset('PlayerUsage')->update_or_create(
+            {id => $dbPlayer->id, name => 'baseScan', last => $time});
+      }
+    }
+  }
+  if (exists $ae->{fleet}) {
+
+# parseMapFleet is going to parse every fleet in a location
+#   so we can use that to keep the ghosts down
+#
+    my %location;
+    foreach my $id (keys %{$ae->{fleet}}) {
+      my $e = $ae->{fleet}->{$id};
+      if (not exists $e->{ships}) {
+        $location{$e->{location}}++;
+      }
+    }
+    if (keys %location == 1) {
+      my @loc = keys %location;
+      $schema->resultset('Fleet')->search({location => $loc[0]})->delete;
+    }
+
+    foreach my $id (keys %{$ae->{fleet}}) {
+      my $e = $ae->{fleet}->{$id};
+      my ($dbFleet, %col);
+# add the new fleets
+#
+      %col = map { $_ => $e->{$_} }
+        grep { exists($e->{$_}) } qw/name owner size origin location/;
+
+      if (exists $e->{arrival}) {
+        my $dtArrival = $dtServer->clone->add(seconds => $e->{arrival});
+        $col{arrival} = $dtArrival->strftime("%Y-%m-%d %H:%M:%S");
+      }
+      $col{id} = $id;
+      $col{time} = $time;
+      $col{guildTag} = $guildTag;
+      $dbFleet = $schema->resultset('Fleet')->update_or_create(%col);
+# with details
+#     
+      $e = $e->{ships};
+      if (defined $e) {
+        foreach (keys %$e) {
+          %col = (
+            id => $id,
+            name => $_,
+            number => $e->{$_},
+            time => $time,
+            guildTag => $guildTag,
+            );
+          $schema->resultset('FleetShip')->update_or_create(%col);
+#          $dbFleet->update_or_create_related('ships', %col);
+        }
+        $schema->resultset('PlayerUsage')->update_or_create(
+            {id => $dbPlayer->id, name => 'fleetScan', last => $time});
+      }
+    }
+  }
+}
+
 sub dumpPostData {
   my $s = shift;
 
-  $s->app->log->info($s->req->headers->header('x-real-ip'));
-  $s->app->log->debug($s->req->body);
-
   my $json = Mojo::JSON->new;
+
+  $s->app->log->debug($s->req->body);
 
   my $aeData = $json->decode( $s->req->body );
   my $err  = $json->error;
@@ -301,18 +493,68 @@ sub dumpPostData {
     $s->render(status => 400);
     #$s->render(template => 'main/response', format => 'json');
   } else {
+    my ($server, $time, $playerID, $daysOld) = map { $aeData->{$_}; } qw/server time playerID daysOld/;
+    my $schema = $s->schema($server);
+    if (defined $schema) {
+      my $dbPlayer = $schema->resultset('Player')->find($playerID);
+      if (defined $dbPlayer) {
+        $s->app->log->debug(sprintf("%s %s", $dbPlayer->name, $dbPlayer->guildTag));
+    my $dbUsage = $dbPlayer->find_or_create_related('usage', 
+            {name => $s->req->headers->header('x-real-ip')});
+    $dbUsage->update({ last => $time });
+      }
+    }
 
     try {
       $s->storeData($aeData);
-
-      $s->app->log->debug("storeData succeeded");
       $s->stash(json => { response => 'sahksess' });
       $s->render(status => 200);
     } catch {
-        $s->app->log->debug("error: $_");
-        $s->stash(json => {response => $_ });
-        $s->render(status => 500);
+      $s->app->log->debug("error: $_");
+      $s->stash(json => {response => $_ });
+      $s->render(status => 500);
     };
+  }
+}
+
+sub dumpPost {
+  my $s = shift;
+
+  $s->app->log->debug($s->req->body);
+
+  my $json = Mojo::JSON->new;
+  my $aeData = $json->decode( $s->req->body );
+  my $err  = $json->error;
+
+  if ($json->error) {
+    $s->stash(json => { error => $json->error });
+    $s->render(status => 400);
+    #$s->render(template => 'main/response', format => 'json');
+  } else {
+    my ($server, $time, $playerID, $daysOld) = map { $aeData->{$_}; } qw/server time playerID daysOld/;
+    my $schema = $s->schema($server);
+    if (defined $schema) {
+      my $dbPlayer = $schema->resultset('Player')->find($playerID);
+      if (defined $dbPlayer) {
+        $s->app->log->debug(sprintf("%s %s", $dbPlayer->name, $dbPlayer->guildTag));
+    my $dbUsage = $dbPlayer->find_or_create_related('usage', 
+            {name => $s->req->headers->header('x-real-ip')});
+    $dbUsage->update({ last => $time });
+      }
+
+    }
+
+    try {
+      $s->storeDataC($aeData);
+      $s->app->log->debug("storeData2 succeeded");
+      $s->stash(json => { response => 'success' });
+      $s->render(status => 200);
+    } catch{
+      $s->app->log->debug("norm error: $_");
+      $s->stash(json => {response => $_ });
+      $s->render(status => 500);
+    };
+
   }
 }
 

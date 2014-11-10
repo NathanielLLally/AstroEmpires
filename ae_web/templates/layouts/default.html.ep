@@ -6,13 +6,21 @@
   <meta name="description" content="">
   <meta name="viewport" content="width=device-width">
 
-  %= include 'common_styles'
-  %= include 'common_js'
+  %= include 'common'
   <%= content_for 'header' %>
 
 </head>
 <body>
+<div id="main">
+  <div id="header">
 %= include 'header'
+  </div>
+<div id="body">
   <%= content %>
+</div>
+  <div id="footer">
+%= include 'footer'
+  </div>
+</div>
 </body>
 </html>

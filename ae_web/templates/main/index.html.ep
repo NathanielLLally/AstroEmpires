@@ -5,17 +5,37 @@
 <div class="section box">
 <span class="text">
 <center><h3><em>A</em>stro <em>E</em>mpires <em>G</em>alaxy <em>I</em>nformation <em>S</em>ervice</h3></center>
-<h5>Welcome to the AEGIS frontend</h5>
-Here in the days to come you will find an interface to the data collected by all of us that use aegis.<p>
+% if (my $name = session 'playerName') {
+
+<h4>Welcome <%= $name %></h4>
+<div>
+<span><b>11/9/14</b> I have re-engineered the database. I am not going to migrate any data as its easier to rescan a galaxy than do that.  The design goal from the beginning has always been to have each guild to have access to the scans that only they have uploaded. If anyone leaves the guild, they no longer can read the data on the website that was scanned by the guild.  They will have to scan their own data again and only have access to that.  However, my first implementation of this scheme resulted in a very complicated scheme to view the data.  Not the latest information was being shown.  Thus, a redo happened. 
+</span><br>
+<span><b>last week some day</b> version 1.0 is out.  with this release comes my long desired 'Timed Move Fleet' button- or as I like to think of it 'come home recyclers'.  goto a move_start fleet view- enter all the details and rather than hit the normal move, hit timed move fleet.  you will instantly know if the time is entered incorrectly or in the past.  there is an opportunity to cancel.  however, same rules apply. if you dont have enough free compaign fleets or screw up your hangar usage.. or if they get shot down before the move ticks off it will fail.  play around with it and see for yourself how it behaves.</span>
+</div
+%   my $changePass = session 'changePass';
+%   if (defined $changePass and $changePass == 1) {
+<form action='/ae/updatePassword' method="post">
+  <div class="txt-fld">
+    <label for="password">New Password</label>
+    <input id="pasword" name="password" type="text" />
+    <button type="submit">Submit</button>
+  </div>
+</form>
+%   } elsif (defined $changePass and $changePass == 2) {
+<h4>password successfully changed</h4>
+%   }
+% } else {
+<h4>Welcome to the AEGIS frontend</h4>
 To use this script you must:
 <ol>
 <li>use firefox</li>
 <li><strong>install <a href="https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/">grease monkey</a></strong></li>
-<li>install my <a href="http://cirrus.airitechsecurity.com/dev/js/aegis.user.js">aegis script</a></li>
+<li>install <a href="http://cirrus.airitechsecurity.com/dev/js/aegis.user.js">aegis</a></li>
 <li>you must use the dark astros skin</li>
 </ol>
+% }
+
 </span>
 </div>
 
-<div class="section box">
-</div>

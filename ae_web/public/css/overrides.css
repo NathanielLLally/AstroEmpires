@@ -1,5 +1,25 @@
+html,
+body {
+  color: black;
+}
+
 .dataTable
 {
+  overflow-x: scroll;
   display: hidden;
 }
 
+.dataTable table
+{
+  overflow-x: scroll;
+}
+
+.toggle-vis
+{
+  cursor: pointer;
+}
+
+a.toggle-vis:hover
+{
+  text-decoration: underline;
+}

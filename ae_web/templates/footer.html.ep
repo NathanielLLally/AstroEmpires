@@ -1,0 +1,15 @@
+% my ($d, $defaultServer, @procs, @servers);
+<div class="panel">
+% if (my $procs = session 'oldprocs') {
+%   @procs = @$procs;
+  <span style="float: left; font-size:26px; margin-right:5px"><b>Old dB</b></span>
+% }
+
+% foreach my $view (@procs) {
+%   my $v = $view;
+%   $view =~ s/([A-Z])/ $1/g;
+  <span class="pbutton">
+  <a href='<%= url_for("/ae/gis/displayProc/$v") %>'><%= $view %></a>
+  </span>
+% }
+</div>

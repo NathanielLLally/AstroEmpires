@@ -1,0 +1,7 @@
+%= stylesheet 'https://github.com/necolas/normalize.css/blob/master/normalize.css'
+%= stylesheet '/css/styles.css'
+%= stylesheet '/css/jquery.dataTables.css'
+%= stylesheet '/css/overrides.css'
+%= javascript '/js/libs/jquery-1.7.1.min.js'
+%= javascript '/js/libs/jquery.leanModal.min.js'
+%= javascript '/js/jquery.dataTables.js'

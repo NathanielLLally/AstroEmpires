@@ -1,4 +1,4 @@
+%= stylesheet 'https://github.com/necolas/normalize.css/blob/master/normalize.css'
 %= stylesheet '/css/styles.css'
-%= stylesheet '/css/h5bp.css'
 %= stylesheet '/css/jquery.dataTables.css'
 %= stylesheet '/css/overrides.css'

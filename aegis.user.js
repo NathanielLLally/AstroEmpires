@@ -5,10 +5,11 @@
 // @downloadURL http://cirrus.airitechsecurity.com/dev/js/aegis.user.js
 // @resource    aegis.css    http://cirrus.airitechsecurity.com/dev/css/aegis.css
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js
+// @require     http://momentjs.com/downloads/moment-with-locales.js
 // @include     *.astroempires.com/*
 // @exclude     *.astroempires.com/login.aspx
 // @exclude     *.astroempires.com/home.aspx
-// @version     0.9
+// @version     1.0
 // @grant       GM_xmlhttpRequest
 // @grant       GM_log
 // @grant       GM_setValue
@@ -28,12 +29,12 @@ if (window.name == 'aswift_1') {
   return;
 }
 
+var GmTimeFormat = "YYYY-MM-DD HH:mm:ss";
 var version = GM_info.script.version;
 console.log("running aegis v"+version);
 
 /* attempt at creating a tab */
-function setTabName()
-{
+(this.setTabName = function() {
   console.log("doc loc: "+document.location.href);
   console.log("win doc loc: "+window.document.location.href);
   if (window.document.location.href.match (/(.+?)astroempires.com/)) {
@@ -45,7 +46,7 @@ function setTabName()
   }
   console.log("tab name: "+window.name);
   console.log('next tabID:'+GM_getValue("aegisTabID", 0));
-}
+})();
 
 function getTabID()
 {
@@ -65,8 +66,12 @@ console.log("grease monkey version "+GM_info.version);
 console.log("update?: "+GM_info.scriptWillUpdate);
 //console.log(GM_info.script);
 
-var aegisURL = "http://cirrus.airitechsecurity.com/ae/gis.json";
+var aegisURL = "http://cirrus.airitechsecurity.com/ae/gis/2.json";
 var sendTimeout;
+
+var ships = ['Fighters','Bombers','Heavy Bombers','Ion Bombers','Corvette','Recycler','Destroyer','Frigate','Ion Frigate','Scout Ship','Outpost Ship','Cruiser','Carrier','Heavy Cruiser','Battleship','Fleet Carrier','Dreadnought','Titan','Leviathan','Death Star'];
+
+var shipAbbrev = ['ft','b','hb','ib','cv','rc','ds','fri','ifri','s','os','cru','car','hcru','bs','fcar','dred','tit','levi','death'];
 
 function checkForUpdate() 
 {
@@ -101,7 +106,7 @@ function checkForUpdate()
     });
   } else {
     console.log('last updated ' + GM_getValue('last_update', '0'));
-    consoleMsg('last update check ' + ( parseInt(((new Date().getTime()) - GM_getValue('last_update', '0')) / 1000)) + 's ago');
+//    consoleMsg('last update check ' + ( parseInt(((new Date().getTime()) - GM_getValue('last_update', '0')) / 1000)) + 's ago');
   }
 
 }
@@ -141,7 +146,7 @@ function sendToServer(data) {
   var hashKey = "sendBuffer:"+data['time'];
   var postData = JSON.stringify(data);
   console.log("posting to server: "+postData);
-  consoleMsg("sending to server", "infoMsg");
+//  consoleMsg("sending to server");
 
   GM_setValue(hashKey, postData);
   sendTimeout = setTimeout(function() { checkSend(hashKey); }, 10000);
@@ -167,11 +172,11 @@ function sendToServer(data) {
         var jsonResponse = JSON.parse(response.responseText);
       if (response.status == 200) {
         console.log("got json status from server: "+jsonResponse.response);
-        consoleMsg("<span class='infoMsg'>response: "+jsonResponse.response+"</span>");
+        consoleMsg("server response: "+jsonResponse.response);
         clearTimeout(sendTimeout);
       } else {
         console.log('server error');
-        consoleMsg("<span class='errorMsg'>server error</span>");
+        consoleMsg("server error", "errMsg");
         //console.log(response.status);
       }
 
@@ -278,12 +283,14 @@ function getElement(obj){
 	return obj;
 }
 function toggleHeight (obj){
-    console.log(obj.style.height);
-  if (obj.style.height == "155px") {
-    obj.style.height = "80%";
+  var cls = obj.className;
+  if (cls.match(/^(.*?)-?small$/)) {
+    obj.className = cls.match(/^(.*?)-?small$/)[1];
   } else {
-    obj.style.height = "155px";
+    obj.className = cls + '-small';
   }
+  console.log(obj);
+  GM_setValue("setting:className:"+obj.id, obj.className);
 }
 
 function toggle (obj, displayType, state){
@@ -296,17 +303,53 @@ function toggle (obj, displayType, state){
 		return false;
 
 	if (state != null && state != undefined){
-		if (state)
+		if (state) {
 			obj.style.display = displayType;
-		else
+      obj.style.zIndex = "999999";
+      obj.style.visibility = "visible";
+    } else {
 			obj.style.display = "none";
+      obj.style.visibility = "hidden";
+      obj.style.zIndex = "-999999";
+    }
 
 	}else{
-		if (!obj.style.display || obj.style.display == displayType)
+		if (!obj.style.display || obj.style.display == displayType) {
+
 			obj.style.display = "none";
-		else
+      obj.style.visibility = "hidden";
+      obj.style.zIndex = "-999999";
+    } else {
 			obj.style.display = displayType;
+      obj.style.visibility = "visible";
+      obj.style.zIndex = "999999";
+    }
 	}
+  GM_setValue("setting:style:display:" +obj.id, obj.style.display);
+  GM_setValue("setting:style:visibility:" +obj.id, obj.style.visibility);
+  GM_setValue("setting:style:zIndex:" +obj.id, obj.style.zIndex);
+}
+
+function restoreSettings(obj)
+{
+  var value;
+  value = GM_getValue("setting:style:display:"+obj.id);
+  if (value != undefined) {
+    obj.style.display = value;
+  }
+  value = GM_getValue("setting:style:display:"+obj.id);
+  if (value != undefined) {
+    obj.style.visibility = value;
+  }
+  value = GM_getValue("setting:style:display:"+obj.id);
+  if (value != undefined) {
+    obj.style.display = value;
+  }
+
+  value = GM_getValue("setting:className:"+obj.id);
+  if (value != undefined) {
+    obj.className = value;
+  }
 }
 
 function show(obj, displayType){
@@ -371,9 +414,13 @@ function unregisterEvent(obj, event, callback, capture){
 
 function updateGalaxyRegion () {
   var curGalReg = document.getElementById('curGalReg');
+  if (curGalReg == null) {
+    console.log('curGalReg is null!');
+    return;
+  }
   var region = unsafeWindow.mapCurrentRegion;
   var galaxy = unsafeWindow.starsGalaxy;
-  if (galaxy == null) {
+  if (region == null) {
     if (document.URL.match(/([A-Za-z][0-9]{2}):([0-9]{2})/)) {
       var gr = document.URL.match(/([A-Za-z][0-9]{2}):([0-9]{2})/);
       galaxy = gr[1];
@@ -398,10 +445,158 @@ function updateGalaxyRegion () {
   var t = window.setTimeout(updateGalaxyRegion, 500);
 }
 
-function consoleMsg(msg, level)
+
+
+//form id="move_fleet_form" method="post" action="fleet.aspx?fleet=618490&view=move_start"a
+//<input type="text" class="input-numeric" value="B39:64:08:21" maxlength="12" size="13" onchange="calc_distance()" name="destination" id="destination">
+//
+//destination=B39%3A73%3A98%3A11&Scout+Ship=1&Cruiser=1&units=Scout+Ship%2CCruiser&fleet_ch1=9498989699&fleet_ch2=1
+
+//function moveFleet(aeData, url, doc)
+
+function moveFleet()
 {
-	var aconsole = document.getElementById("aegisConsole");
+  var fleetID;
+  var el = document.URL.match(/fleet\.aspx\?fleet=(\d+)&view=move/);
+  if (el == null) {
+    return;
+  } else {
+    fleetID = el[1];
+  }
+  var data= {};
+  var units = [];
+  var tbxMsg = [];
+
+  // set up post data
+  //
+  var el = document.getElementById('destination');
+  if (el != null) {
+    data.destination = el.value;
+  }
+  ships.forEach(function(ship, i, ar) {
+    var el = document.getElementById('quant'+ship);
+    if (el != null) {
+      if (el.value > 0) {
+        data[ship] = el.value;
+        units.push(ship);
+        tbxMsg.push(ship + ": "+el.value);
+      }
+    }
+  });
+  data.units = units.join(',');
+
+  var el = document.getElementsByName('fleet_ch1');
+  if (el != null) { data.fleet_ch1=el[0].value; }
+  el = document.getElementsByName('fleet_ch2');
+  if (el != null) { data.fleet_ch2=el[0].value; }
+
+  var postData = $.param(data); //begginning to love jquery
+//  consoleMsg(postData);
+
+  //  callback for sending post
+  //
+  var sendPost = (function(fleetID, data) {
+    return function () { GM_xmlhttpRequest({
+      method: "POST",
+           url: serverURL + '/fleet.aspx?fleet=' +fleetID + "&view=move_start",
+           data: data,
+           headers: {
+             "Content-Type": "application/x-www-form-urlencoded"
+           },
+           onload: function(response) {
+
+             if (response.responseText.indexOf("Fleet movement started") > -1) {
+               consoleMsg('fleet embarked', "noticeMsg");
+             } else {
+//<center class="error">Action failed, please retry.</center>
+               consoleMsg('problem with spacedocks!', "errorMsg");
+               console.log(response.responseText);
+             }
+             document.location.href = serverURL + "/fleet.aspx";
+           }
+    });
+    };
+  })(fleetID, postData);
+
+  // validate the time
+  //
+  var curServerTime = document.getElementById('server-time');
+  var inputTime = document.getElementById('moveFleetTime');
+  var mDepart = new moment(inputTime.value);
+
+  var mServerTime = new moment(curServerTime.innerHTML);
+  if (!mDepart.isValid()) {
+    consoleMsg('invalid time!', "errorMsg");
+    return;
+  }
+  if (mDepart.isBefore(mServerTime)) {
+    consoleMsg('time in the past!', "errorMsg");
+    return;
+  }
+
+  //  set up the delay
+  //
+  var timer;
+
+  var delayedPost = (function(curServerTime, mDepart,sendPost) {
+    var that = this;
+    this.tick = function() {
+      var mServerTime = new moment(curServerTime.innerHTML);
+      if (mServerTime.isSame(mDepart) || mServerTime.isAfter(mDepart)) {
+        sendPost();
+      } else {
+        timer = window.setTimeout(function() { that.tick(); }, 1000);
+      }
+
+    };
+    return this.tick;
+  })(curServerTime, mDepart, sendPost);
+
+  //  visual elements
+  //
+  consoleMsg('delayed fleet move set for <br>' +
+      mDepart.diff(mServerTime, 'seconds') + " seconds from now","infoMsg");
+
+  inputTime.setAttribute('disabled', 'disabled');
+  inputTime.className = 'aegisToolbox-text-set';
+
+  var div = document.createElement("div");
+  var btn = document.createElement("span");
+  btn.id = 'cancelMoveButton';
+  btn.className = 'aegisToolbox-button';
+  btn.innerHTML = "Cancel";
+
+  var span = document.createElement("span");
+  span.className = 'aegisToolbox-text';
+  span.innerHTML = "destination: "+data.destination +"<br>"+ tbxMsg.join("<br>");
+  consoleMsg(tbxMsg.join(","));
+
+  var cancelClick = function() {
+    window.clearTimeout(timer); 
+
+    inputTime.className = 'aegisToolbox-text';
+    inputTime.removeAttribute('disabled');
+
+    inputTime.parentNode.removeChild(div);
+    consoleMsg("delayed fleet movement canceled","infoMsg");
+  };
+  registerEvent(btn, "click", cancelClick);
+
+  div.appendChild(document.createElement("br"));
+  div.appendChild(btn);
+  div.appendChild(document.createElement("br"));
+  div.appendChild(span);
+  inputTime.parentNode.appendChild(div);
+
+  delayedPost();
+
+}
+
+
+(this.makeConsole = function () {
+  var container = document.getElementById("aegisConsole-Container");
 	var consoleHeader = document.getElementById("aegisConsole-Header");
+	var aconsole = document.getElementById("aegisConsole");
   var toolbox = document.getElementById('aegisConsole-Toolbox');
 	
 	if (!consoleHeader){
@@ -416,7 +611,8 @@ function consoleMsg(msg, level)
 
 		var consoleHeaderClick = function(){ toggle(toolbox); toggle(aconsole);};
 		registerEvent(consoleHeader, "click", consoleHeaderClick);
-		document.body.appendChild(consoleHeader);
+
+//		document.body.appendChild(consoleHeader);
   }
   if (!toolbox) {
 		toolbox = document.createElement("div");
@@ -432,18 +628,46 @@ function consoleMsg(msg, level)
 
     var curGalReg = document.createElement('span');
     curGalReg.id='curGalReg';
+    curGalReg.className='curGalReg';
     toolbox.appendChild(curGalReg);
+//  updateGalaxyRegion(); - depends on document.getElementById, wait
+//    for toolbox to be added
+
+    var btnDM = document.createElement('span');
+    btnDM.id='btnScanRegion';
+    btnDM.className = 'aegisToolbox-button';
+    btnDM.innerHTML = 'Timed Move Fleet';
+    toolbox.appendChild(document.createElement('br'));
+    toolbox.appendChild(btnDM);
+    toolbox.appendChild(document.createElement('br'));
+
+    var inpTime = document.createElement('input');
+    inpTime.id='moveFleetTime';
+    inpTime.name='moveFleetTime';
+    inpTime.className='aegisToolbox-text';
+
+    inpTime.setAttribute("type", "text");
+
+  	elem=document.getElementById('server-time');
+    if (elem != null) {
+      var serverTime = elem.getAttribute("title");
+      var mST = new moment(new Date(serverTime));
+      mST.add(10, 'seconds');
+      inpTime.setAttribute("value", mST.format("YYYY-MM-DD HH:mm:ss"));
+    }
+
+    toolbox.appendChild(inpTime);
 
 		var scanRegionClick = function() { scanRegion(); };
 		registerEvent(btnScanRegion, "click", scanRegionClick);
 
-    document.body.appendChild(toolbox);
+		var moveFleetClick = function() { moveFleet(); };
+		registerEvent(btnDM, "click", moveFleetClick);
+//    document.body.appendChild(toolbox);
 
-    updateGalaxyRegion();
   }
 
   if (!aconsole) {
-    console.log('making console');
 		aconsole = document.createElement("div");
 		aconsole.id = "aegisConsole";
     aconsole.className = 'aegisConsole';
@@ -456,8 +680,34 @@ function consoleMsg(msg, level)
 		//registerEvent(document.body, "scroll", pageScroll);
 		//window.onscroll = pageScroll;
 	
-		document.body.appendChild(aconsole);
+//		document.body.appendChild(aconsole);
+
+    aconsole.innerHTML = GM_getValue('aegisConsole:'+getTabID(), "tabID: "+getTabID());
 	}
+
+	if (!container){
+		container = document.createElement("div");
+		container.id = "aegisConsole-Container";
+		container.className = "aegisConsole-Container";
+
+		container.appendChild(consoleHeader);
+		container.appendChild(toolbox);
+		container.appendChild(aconsole);
+
+    restoreSettings(toolbox);
+    restoreSettings(aconsole);
+
+    document.body.insertBefore(
+      container, 
+      document.body.firstChild
+      );
+
+    updateGalaxyRegion();
+  }
+
+this.consoleMsg = function(msg, level)
+{
+
 
   if (typeof(level) == "string") {
     msg = "<span class='"+level+"'>"+msg+"</span>";
@@ -466,11 +716,13 @@ function consoleMsg(msg, level)
 	if (typeof(msg) == "string") {
 		msg = msg + "<br>" + aconsole.innerHTML;
     aconsole.innerHTML = msg;
+    GM_setValue('aegisConsole:'+getTabID(), msg);
   } else {
     console.log('consolMsg: '+typeof(msg));
   }
 
 }
+})();
 
 function myTimeTimer()
 {
@@ -484,9 +736,9 @@ function myTimeTimer()
 function replaceTime(doc)
 {
   	elem=doc.getElementById('server-time');
-    elem.id = "old-server-time";
     var serverTime = elem.getAttribute("title");
-    elem.innerHTML = "<span id='server-time' title='"+serverTime+"'></span>&nbsp&nbsp&nbsp&nbsp<span id='my-time'></span>";
+//    elem.id = "old-server-time";
+//    elem.innerHTML = "<span id='server-time' title='"+serverTime+"'></span>&nbsp&nbsp&nbsp&nbsp<span id='my-time'></span>";
     //myTimeTimer();
 
 	  for(n=1;n<=500;n++)
@@ -953,17 +1205,17 @@ function fieldRightOfSlash(string)
 function fieldPlayerFromLink(aeData, link)
 {
   var player = {};
-  console.log('player from link '+link.href);
+  console.log('player from link '+link.innerHTML);
   if (link.href.match(/profile\.aspx\?player=(\d+)$/)) {
     player['id'] = link.getAttribute("href").match(/=(\d+)$/)[1];
-    player['level'] = matchFirstPos(link.getAttribute("title"), /level (\d+\.\d+)/);
+    player['level'] = matchFirstPos(link.getAttribute("title"), /level ([\d+\.,]+)/);
     if (player['level'] == null) {
       delete player['level'];
     }
 
     if (link.textContent.match(/\[.*?\]/)) {
       player['guild'] = {tag: link.textContent.match(/(\[.*?\])/)[1] };
-      player['name'] = link.textContent.match(/\].*?(\S+)/)[1];
+      player['name'] = link.textContent.match(/\]\s*?(\S.*?)$/)[1];
     } else {
       player['name'] = link.textContent;
     }
@@ -976,9 +1228,11 @@ function fieldPlayerFromLink(aeData, link)
 }
 
 function parseMapFleet(aeData, table, location, follow) {
-  consoleMsg('parseMapFleet '+location);
+  if (location != null) {
+    consoleMsg('parseMapFleet '+location);
+  }
     
-//    console.log(xml2string(table));
+    console.log(xml2string(table));
     
     var tr = table.getElementsByTagName('tr');
   
@@ -991,24 +1245,31 @@ function parseMapFleet(aeData, table, location, follow) {
     dtRow['location'] = location;
     
     var tds = tr[r].getElementsByTagName('td');
-    if (tds != null && tds.length == 4){
-      
-      var a = tds[0].getElementsByTagName('a');
+    if (tds != null && tds.length >= 4){
+      var i = 0; 
+      var a = tds[i++].getElementsByTagName('a');
       if (a != null && a.length > 0) {
         dtRow['id'] = matchFirstPos(a[0].href, /fleet\.aspx\?fleet=(\d+)/);
         dtRow['name'] = a[0].innerHTML;
       }
-      var a = tds[1].getElementsByTagName('a');
+      var a = tds[i++].getElementsByTagName('a');
       if (a != null && a.length > 0) {
-        dtRow['player'] = fieldPlayerFromLink(aeData, a[0]);
+        dtRow['owner'] = fieldPlayerFromLink(aeData, a[0]);
       }
-     
-      var sortKey = tds[2].getAttribute("sorttable_customkey");
+    
+      if (location == null) {
+        var sortKey = tds[i++].getAttribute("sorttable_customkey");
+        if (sortKey != null) {
+          dtRow['location'] = sortKey;
+        }
+      
+      }
+      var sortKey = tds[i++].getAttribute("sorttable_customkey");
       if (sortKey != null) {
         dtRow['arrival'] = sortKey;
       }
       
-      var sortKey = tds[3].getAttribute("sorttable_customkey");
+      var sortKey = tds[i++].getAttribute("sorttable_customkey");
       if (sortKey != null) {
         dtRow['size'] = sortKey;
       }
@@ -1017,7 +1278,7 @@ function parseMapFleet(aeData, table, location, follow) {
 
     if (Object.keys(dtRow).length > 0 && dtRow['id'] != null) {
       if (follow) {
-        queueGet("fleet.aspx?fleet="+dtRow['id'], "scanning fleet");
+        queueGet("fleet.aspx?fleet="+dtRow['id'], "scanning fleet "+dtRow['id']);
       }
 
       aeData.add('fleet',dtRow);
@@ -1026,19 +1287,29 @@ function parseMapFleet(aeData, table, location, follow) {
 }
 
 function parseScanner(aeData, url, doc, follow){
-  
+
+  consoleMsg('parseScanner');
   //console.log(xml2string(document.getElementById('coded_scanners')));
-   
-  parseMapFleet(aeData, doc.getElementById('coded_scanners'), follow);
-    
+  var table = doc.getElementById('coded_scanners');
+  if (table == null) {
+    table = doc.getElementById('empire_scanners');
+    if (table != null) {
+      table = table.getElementsByTagName('table')[0];
+    }
+  }
+  parseMapFleet(aeData, table, null, follow);
+
+  console.log(JSON.stringify(aeData));
 }
 
 
 function parseFleet(aeData, url, doc) {
   var dtRow = {};
+  if (url.match(/fleet.aspx\?fleet=(\d+)&view=move/)) {
+    return;
+  }
   dtRow['id'] = url.match(/fleet.aspx\?fleet=(\d+)/)[1];
   consoleMsg('parseFleet '+ dtRow['id'] );
-  
   
   var tables = doc.getElementsByTagName('table');
   var playerAndLoc;
@@ -1061,7 +1332,7 @@ function parseFleet(aeData, url, doc) {
     if (cols != null && cols.length >= 4) {
       var link = cols[0].getElementsByTagName('a');
       if (link != null && link.length > 0) {
-        dtRow['player'] = fieldPlayerFromLink(aeData, link[0]);
+        dtRow['owner'] = fieldPlayerFromLink(aeData, link[0]);
       }
       link = cols[1].getElementsByTagName('a');
       if (link != null && link.length > 0) {
@@ -1089,7 +1360,7 @@ function parseFleet(aeData, url, doc) {
   for(r=0; r<tr.length; r++){
     var td = tr[r].getElementsByTagName('td');
     if (td.length > 0) {
-     ships[td[0].textContent] = td[1].textContent;
+     ships[td[0].textContent] = td[1].textContent.match(/([\d\.]+)/g).join("");
    }
   }
   if (Object.keys(ships).length > 0) {
@@ -1135,7 +1406,6 @@ function parseAstro(aeData, url, doc, follow) {
          dtRow['name'] = link.textContent;
          dtRow['id'] = link.getAttribute('href').match(/=(\d+)$/)[1];
          dtRow['location'] = location;
-         aRow['base'] = dtRow['id'];
          
          link = col[i++].getElementsByTagName('a')[0];
          dtRow['owner'] = fieldPlayerFromLink(aeData, link);
@@ -1147,6 +1417,7 @@ function parseAstro(aeData, url, doc, follow) {
          
          link = col[i].getElementsByTagName('a')[0];
          dtRow['economy'] = fieldRightOfSlash(link.textContent);
+         dtRow['ownerIncome'] = toFixed(eval(link.textContent) * 100, 2);
          }
          
      }
@@ -1393,39 +1664,52 @@ function parseBase(aeData, url, doc, follow) {
 
   var tblStru = doc.getElementById('base_resume-structures');
   if (tblStru != null) { 
+    tblStru = tblStru.getElementsByTagName('table')[0];
+  }
+
+  if (tblStru != null) { 
     //  console.log(xml2string(tblStru));
 
-    var struc = {};
+    var struct = {};
     var trs = tblStru.getElementsByTagName('tr');
     for (i = 0; i < trs.length; i++) {
       var tds = trs[i].getElementsByTagName('td');
       if (tds != null && tds.length > 0) {
         var bld = tds[0];
-        var bldVal = tds[0];
+        var bldVal = tds[1];
+        if (bld != null && bldVal != null) {
+          var name = bld.getElementsByTagName('span');
+          var val = bldVal.innerHTML.split("<br>");
+          for (j = 0; j < name.length; j++) {
+            if (name[j] != null && val[j] != null) {
+              struct[name[j].textContent] = val[j];
+            }
+          }
+        }
+
         var ccJg = tds[2];
         var ccJgVal = tds[3];
         if (ccJgVal != null && ccJgVal.textContent.match(/\d/)) {
           //console.log( ccJgVal.innerHTML);
           var vals = ccJgVal.innerHTML.match(/(\d+)</g);
-          baseRow['commandCenters'] = vals[0].match(/\d+/)[0];
+          struct['Command Centers'] = vals[0].match(/\d+/)[0];
           if (vals.length > 1) {
-            baseRow['jumpGate'] = vals[1].match(/\d+/)[0];
+            struct['Jump Gate'] = vals[1].match(/\d+/)[0];
           }
         }
         var def = tds[4];
         var defVal = tds[5];
-        var ds = {};
         if (def != null && defVal != null) {
           var name = def.getElementsByTagName('span');
           var val = defVal.getElementsByTagName('span');
           for (j = 0; j < name.length; j++) {
             if (name[j] != null && val[j] != null) {
-              ds[name[j].textContent] = fieldRightOfSlash(val[j].textContent);
+              struct[name[j].textContent] = fieldRightOfSlash(val[j].textContent);
             }
           }
         }
-        if (Object.keys(ds).length > 0) {
-          baseRow['defenses'] = ds;
+        if (Object.keys(struct).length > 0) {
+          baseRow['structures'] = struct;
         }
       }
     }
@@ -1769,6 +2053,13 @@ function scanRegion()
 
 /********************************************************************************************************
 */
+
+Error.prototype.shortstack = function()
+{
+  var stack = this.stack;
+  console.log(typeof stack);
+}
+
 function dispatch(url, doc, follow) {
   url = decodeURIComponent(url);
   console.log('dispatching '+url );
@@ -1831,10 +2122,13 @@ function dispatch(url, doc, follow) {
       if (daysOld != null) {
         sendQ.clear;
         consoleMsg("data is "+daysOld+" days old");
-        return;
+//        return;
       }
       if (url.match(/view=scanners/)) { 
         parseScanner(aeData, url, doc, follow);
+
+      } else if (url.match(/fleet\.aspx\?fleet=(\d+)&view=move/)) {
+        //moveFleet(aeData, url, doc);
 
       } else if (url.match(/fleet\.aspx\?fleet=/)) {
         parseFleet(aeData, url, doc);
@@ -1867,8 +2161,8 @@ function dispatch(url, doc, follow) {
     }
   } catch(e) {
     console.log(e);
-    consoleMsg(e.stack); 
-    consoleMsg(e.message);
+    consoleMsg(e.shortstack, "errMsg"); 
+    consoleMsg("line "+e.linenumber + " "+e.message, "errMsg");
     var errorMsg = {
       "server": server,
       "time": serverTime,

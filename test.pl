@@ -8,7 +8,7 @@ use Data::Dumper;
 my $ae = astroEmpires->new(
   server => 'http://bravo.astroempires.com',
 #  user => 'nathaniel.lally@gmail.com',
-  user => 'nate.lally@gmail.com',
+  user => 'nathaniel.lally@gmail.com',
   pass => 'aqsw@1#2'
 );
 

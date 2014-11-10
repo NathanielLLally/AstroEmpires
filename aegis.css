@@ -13,36 +13,51 @@
   text-decoration: blink;
 }
 
-.aegisConsole,
+.aegisConsole-Container {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 200px;
+  z-index: 1;
+//  z-index: 999999;
+}
+
 .aegisConsole-Header,
 .aegisConsole-Toolbox
 {
   width: 200px;
   left: 7px;
-  top: 57px;
-//  height: 155px;
-  height:155px;
-  position: absolute;
+//  top: 92px;
+//  position: absolute;
   white-space: pre;
   background-color: #3c5268;
   opacity:  .7;
-  z-index: 100000;
+  z-index: 9999999;
   color:  white;
   font-size: 10px;
   overflow-y: hidden;
 }
 
+.aegisConsole-small,
 .aegisConsole {
+  color:  white;
+  font-size: 10px;
+  white-space: pre;
+  left: 7px;
+  background-color: #3c5268;
+  opacity:  .7;
   padding-left: 4px;
+  width: 196px;
+  height: 52em;
+  overflow-y: scroll;
+}
+.aegisConsole-small {
+  height: 12em;
 }
 
-.aegisConsole:hover {
-  opacity: 1;
-}
 
 .aegisConsole-Header {
   height: 20px;
-  top: 7px;
   text-align: center;
   background-color: #3c5268;
   opacity:  .9;
@@ -52,20 +67,20 @@
 
 .aegisConsole-Toolbox.span {
   border: 1px solid black;
-}
-.aegisConsole-Toolbox {
-  height: 30px;
-  top: 27px;
-  overflow: hidden;
-  font-size:12px;
-  color: cyan;
+//  margin-top:15px;
+//  padding-top:15px;
+  cursor: pointer;
 }
 
-.aegisToolbox-button:hover {
-  background-color: #87B1FF;
-  color: #FFFFFF;
-  opacity: 1;
+.aegisConsole-Toolbox {
+//  height: 85px;
+  overflow: hidden;
+  word-wrap: normal;
+  font-size:12px;
+  float: right;
+  border-bottom: 1px solid black;
 }
+
 .aegisToolbox-button {
   background-image : none;
   background-color: #2c4258;
@@ -77,8 +92,50 @@
   border-style: solid;
   border-width: 1px;
   border-color: #15EDE2;
-  padding: 2px 6px 2px 6px;
+  padding: 2px 5px 2px 5px;
+  float: left;
 }
+
+.aegisToolbox-button:hover {
+  background-color: #4c6278;
+  color:  #15EDE2;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.curGalReg,
+.aegisToolbox-text {
+  color: cyan;
+  float: right;
+  margin-left: 0px;
+  margin-top: 7px;
+  margin-right:10px;
+  font-size: 12px;
+}
+.curGalReg {
+  font-size: 16px;
+  text-shadow: 1px 1px purple;
+  color: cyan;
+}
+
+input.aegisToolbox-text {
+//  float:right;
+//  background-color:  #3c5268;
+  margin-left: 5px;
+  margin-right: 10px;
+  margin-top: 5px;
+  padding: 2px 5px 2px 5px;
+  float: left;
+//  left: 7px;
+//  position: absolute;
+  color: white;
+}
+
+input.aegisToolbox-text-set {
+  float: left;
+  color: red;
+}
+
 
 .reset-this {
     animation : none;

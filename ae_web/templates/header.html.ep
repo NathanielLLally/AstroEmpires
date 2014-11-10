@@ -8,24 +8,29 @@
  
 %= end
 
-<div class="main">
   <div class="panel">
 
-% my $d;
-% if (my $playerID = stash 'playerID') {
-% foreach my $view (@$procs) {
+% my ($d, $defaultServer, @dbic, @servers, @views);
+% if (my $playerID = session 'playerID') {
+% if (my $dbic = session 'dbic') { @dbic = @$dbic; }
+% if (my $views = session 'views') { @views = @$views; }
+% if (my $servers = session 'servers') { @servers = @$servers; }
+% foreach my $view (@views) {
 %   my $v = $view;
 %   $view =~ s/([A-Z])/ $1/g;
   <span class="pbutton">
-  <a href='<%= url_for("/ae/gis/displayProc/$v") %>'><%= $view %></a>
+  <a href='<%= url_for("/ae/gis/displayView/$v") %>'><%= $view %></a>
   </span>
 % }
     <a id="go" name="logout" href="/ae/logout">Logout</a>
   <form action="/ae/select/server" name="frmServerSelect" method="post" onChange="submitForm('frmServerSelect')">
   <select name="server">
-% foreach my $svr (@$servers) {
-%   my $s = '';  
-%   if (my $server = stash 'server') {
+%   if (!(my $server = session 'server')) {
+    <option value="" >Server</option>
+%}
+% foreach my $svr (@servers) {
+%   my $s = '';
+%   if (my $server = session 'server') {
 %     if ($server eq $svr) { $s = " selected"; }
 %   }
     <option value="<%= $svr %>" <%= $s %>><%= $svr %></option>
@@ -66,4 +71,3 @@
             </form>
             </div>
             </div>
-</div>
