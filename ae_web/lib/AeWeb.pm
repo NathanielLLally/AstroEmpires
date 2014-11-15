@@ -30,6 +30,7 @@ sub startup {
   $r->get('/ae/gis')->to(controller => 'main', action => 'index');
   $r->any('/ae/gis/displayView/:view')->to(controller => 'main', action => 'displayView');
   $r->any('/ae/gis/displayProc/:proc')->to(controller => 'main', action => 'displayProc');
+  $r->any('/ae/gis/displayOldProc/:proc')->to(controller => 'main', action => 'displayOldProc');
   $r->any('/ae/gis/displayData/:tag')->to(controller => 'main', action => 'displayData');
   $r->post('/ae/login')->to(controller => 'main', action => 'login');
   $r->post('/ae/updatePassword')->to(controller => 'main', action => 'updatePassword');
@@ -37,6 +38,7 @@ sub startup {
   $r->any('/ae/logout')->to(controller => 'main', action => 'logout');
   $r->post('/ae/gis')->to(controller => 'store', action => 'dumpPostData');
   $r->post('/ae/gis/2')->to(controller => 'store', action => 'dumpPost');
+  $r->post('/ae/gis/q')->to(controller => 'query', action => 'dispatchQuery');
 }
 
 1;

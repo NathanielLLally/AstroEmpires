@@ -8,13 +8,30 @@ use strict;
 use warnings;
 
 use base 'DBIx::Class::Schema';
+#use DBIx::Connector;
+#use DBIx::QueryByName::Logger;
 
 __PACKAGE__->load_namespaces;
 
 
-# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-07 11:27:33
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:4CV3F6aI4SEb+DE01bczSg
+=pod
 
+my $dsn;
+my $username;
+my $password;
+my %attr;
+my %extr;
 
-# You can replace this text with custom code or comments, and it will be preserved on regeneration
+our  $schema = My::Schema->connect( sub {
+    my $conn = DBI::Connector->new(
+      $dsn, $username, $password, \%attr, \%extr);
+    my $dbh = $conn->dbh;
+    $conn->run( fixup => sub {
+      my $log;
+      &$_->($log = get_logger());
+      });
+    });
+
+=cut
+
 1;

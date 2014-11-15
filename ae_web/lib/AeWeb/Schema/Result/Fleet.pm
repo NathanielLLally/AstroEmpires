@@ -84,9 +84,9 @@ __PACKAGE__->table("fleet");
 
 =head2 guildTag
 
-  accessor: 'guild_tag'
   data_type: 'varchar'
-  is_nullable: 1
+  default_value: (empty string)
+  is_nullable: 0
   size: 9
 
 =cut
@@ -117,12 +117,7 @@ __PACKAGE__->add_columns(
     is_nullable => 1,
   },
   "guildTag",
-  {
-    accessor => "guildTag",
-    data_type => "varchar",
-    is_nullable => 1,
-    size => 9,
-  },
+  { data_type => "varchar", default_value => "", is_nullable => 0, size => 9 },
 );
 
 =head1 PRIMARY KEY
@@ -131,32 +126,34 @@ __PACKAGE__->add_columns(
 
 =item * L</id>
 
+=item * L</guildTag>
+
 =back
 
 =cut
 
-__PACKAGE__->set_primary_key("id");
+__PACKAGE__->set_primary_key("id", "guildTag");
 
 =head1 RELATIONS
 
-=head2 fleet_ship
+=head2 fleet_ships
 
-Type: might_have
+Type: has_many
 
-Related object: L<AeWeb::Schema::Result::FleetShip>
+Related object: L<AeWeb::Schema::Result::FleetShips>
 
 =cut
 
-__PACKAGE__->might_have(
-  "ships" =>
-  "AeWeb::Schema::Result::FleetShip",
+__PACKAGE__->has_many(
+  "fleet_ships",
+  "AeWeb::Schema::Result::FleetShips",
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-07 16:36:54
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:RLwufBDoO94QwFnMBhfnow
+# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:4Dazc7U6mrG3KZPp2N/4aw
 
 
 # You can replace this text with custom code or comments, and it will be preserved on regeneration

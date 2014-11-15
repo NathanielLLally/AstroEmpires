@@ -57,9 +57,9 @@ __PACKAGE__->table("fleetSize");
 
 =head2 guildTag
 
-  accessor: 'guild_tag'
   data_type: 'varchar'
-  is_nullable: 1
+  default_value: (empty string)
+  is_nullable: 0
   size: 9
 
 =cut
@@ -76,12 +76,7 @@ __PACKAGE__->add_columns(
     is_nullable => 0,
   },
   "guildTag",
-  {
-    accessor => "guildTag",
-    data_type => "varchar",
-    is_nullable => 1,
-    size => 9,
-  },
+  { data_type => "varchar", default_value => "", is_nullable => 0, size => 9 },
 );
 
 =head1 PRIMARY KEY
@@ -90,15 +85,17 @@ __PACKAGE__->add_columns(
 
 =item * L</location>
 
+=item * L</guildTag>
+
 =back
 
 =cut
 
-__PACKAGE__->set_primary_key("location");
+__PACKAGE__->set_primary_key("location", "guildTag");
 
 
-# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-07 16:36:54
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:PMc6zYB7vfd4s4AJvG9A4A
+# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:VDApHaOpoICzyWSffQwONg
 
 
 # You can replace this text with custom code or comments, and it will be preserved on regeneration

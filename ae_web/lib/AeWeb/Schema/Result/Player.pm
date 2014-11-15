@@ -62,14 +62,12 @@ __PACKAGE__->table("player");
 
 =head2 guildTag
 
-  accessor: 'guild_tag'
   data_type: 'varchar'
   is_nullable: 1
   size: 9
 
 =head2 defaultServer
 
-  accessor: 'default_server'
   data_type: 'varchar'
   is_nullable: 1
   size: 80
@@ -92,18 +90,9 @@ __PACKAGE__->add_columns(
   "upgraded",
   { data_type => "varchar", is_nullable => 1, size => 10 },
   "guildTag",
-  {
-    accessor => "guildTag",
-    data_type => "varchar",
-    is_nullable => 1,
-    size => 9,
-  },
+  { data_type => "varchar", is_nullable => 1, size => 9 },
   "defaultServer",
-  {
-    data_type => "varchar",
-    is_nullable => 1,
-    size => 80,
-  },
+  { data_type => "varchar", is_nullable => 1, size => 80 },
   "password",
   { data_type => "varchar", is_nullable => 1, size => 80 },
 );
@@ -120,16 +109,27 @@ __PACKAGE__->add_columns(
 
 __PACKAGE__->set_primary_key("id");
 
-__PACKAGE__->might_have(
-  "usage" =>
-  "AeWeb::Schema::Result::PlayerUsage",
+
+=head1 RELATIONS
+
+=head2 player_usage
+
+Type: has_many
+
+Related object: L<AeWeb::Schema::Result::PlayerUsage>
+
+=cut
+
+__PACKAGE__->has_many(
+  "player_usage",
+  "AeWeb::Schema::Result::Player_Usage",
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-07 16:36:54
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:Jiu1ceP4VA5wMH9bF9FkSQ
+# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:j96BjCqiurz3VWrh3+bJbQ
 
 
 # You can replace this text with custom code or comments, and it will be preserved on regeneration

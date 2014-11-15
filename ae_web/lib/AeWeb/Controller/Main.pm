@@ -10,6 +10,8 @@ use DBI;
 use Try::Tiny;
 use Data::Dumper;
 
+use base 'AeWeb::DBcommon';
+
 our $shortFieldName = {
     starLoc => 'system',
     lastScan => 'last scan',
@@ -33,69 +35,35 @@ our $shortFieldName = {
     planetaryRing => 'pr',
   };
 
-sub dbh {
-  my ($s, $db) = @_;
-  if (defined $db) {
-    $db =~ s/^(\S)/ae\u$1/;
-  } else {
-    $db = "ae";
-  }
-  my $dbh = DBI->connect_cached("DBI:mysql:database=$db;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
-  $dbh;
-}
-
-sub createDatabase
-{
-  my ($s, $db) = @_;
-}
-
-sub schema
-{
-  my ($s,$server) = (@_);
-  $s->app->log->debug('schema got server:'.$server);
-  my ($db, $key, $schema) = ($server,'_schema_',undef);
-  $db =~ s/^(\S)/ae\u$1/;
-  $key .= $db;
-
-  $schema = $s->{$key};
-  if (defined $schema) {
-    $schema->storage->ensure_connected;
-  } else {
-    try {
-      $schema = $s->{$key} = AeWeb::Schema->connect("dbi:mysql:$db", 'ae', 'q1w2e3r4');
-    } catch {
-      if ($_ =~ /Unknown database/) {
-        $s->createDatabase($db);
-      }
-    };
-    $schema->storage->debugfh(IO::File->new('/tmp/trace.out', 'w'));
-    $schema->storage->debug(1);
-  }
-  $schema;
-}
-
 sub getServers {
   my $s = shift;
+#  my $dbh = $s->dbh($s->session('server'));
   my $dbh = $s->dbh;
   my (@headers, $sth, $rs);
   my @servers;
-  $sth = $dbh->prepare_cached("select distinct server from astro");
+#  $sth = $dbh->prepare_cached("select distinct server from astro");
+  $sth = $dbh->prepare_cached("show databases");
   $sth->execute();
   $rs = $sth->fetchall_arrayref();
   foreach my $row (@$rs) {
-    push @servers, $row->[0];
+    if ($row->[0] =~ /^ae(\S+)$/) {
+      push @servers, lc($1);
+    } else {
+#      $s->app->log->debug(Dumper($row));
+    }
   }
   $s->session( servers => \@servers );
 }
 
 sub getViews {
   my $s = shift;
-  my $dbh = $s->dbh('bravo');
+  my $dbh = $s->dbh($s->session('server'));
   my (@headers, $sth, $rs);
 
 #  header.html.ep wants a list of database views
 #
   $sth = $dbh->table_info('', '', undef, "VIEW");
+  $sth->execute();
   $rs = $sth->fetchall_arrayref();
   my @views;
   foreach my $row (@$rs) {
@@ -113,34 +81,48 @@ sub getViews {
 
 sub getProcs {
   my $s = shift;
-  my $dbh = $s->dbh;
   my (@headers, $sth, $rs);
 
 #  header.html.ep wants a list of database views
 #
-  $sth = $dbh->prepare("show procedure status");
+  $sth = $s->dbh->prepare("show procedure status");
+  $sth->execute();
+  $rs = $sth->fetchall_arrayref();
+  my @oldproc;
+  foreach my $row (@$rs) {
+    my $el = $row->[1];
+    if ($el =~ /^p/ and $row->[0] eq 'ae') {
+      $el =~ s/^p//;
+      push @oldproc, $el;
+    }
+#    $s->app->log->debug(Dumper($row));
+  }
+  $sth = $s->dbh($s->session('server'))->prepare("show procedure status");
   $sth->execute();
   $rs = $sth->fetchall_arrayref();
   my @proc;
   foreach my $row (@$rs) {
     my $el = $row->[1];
-    if ($el =~ /^p/) {
+    my $db = $s->session('server');
+    $db =~ s/^(\S)/ae\u$1/;
+    $s->app->log->debug(sprintf("db %s in row %s name %s",$db, $row->[1], $row->[0]));
+    if ($el =~ /^p/ and $row->[0] eq $db) {
       $el =~ s/^p//;
       push @proc, $el;
     }
 #    $s->app->log->debug(Dumper($row));
   }
 
+
   $s->session(
-    oldprocs => \@proc,
+    oldprocs => \@oldproc,
+    newprocs => \@proc,
   );
 }
 
 sub getDbData {
   my $s = shift;
   $s->getServers;
-  $s->getViews;
-  $s->getProcs;
   $s->session(
     dbic => ['AllBases', 'Usage'],
     shortFieldName => $shortFieldName,
@@ -199,9 +181,41 @@ sub displayProc {
     return;
   }
 
+  my $dbh = $s->dbh($s->session('server'));
+
+  my $proc = $s->stash('proc');
+  $proc =~ s/.*\///;
+  $s->app->log->debug("showing proc p$proc(".$s->session('server').",". $s->session('playerID'));
+
+  my (@headers, $sth, $rs);
+
+  $sth = $dbh->prepare("call p$proc(?)");
+  try {
+    $sth->execute($s->session('guildTag'));
+  } catch {
+    die "call error: $_";
+  };
+  @headers = @{ $sth->{NAME} };
+  $rs = $sth->fetchall_arrayref();
+
+  $s->stash(
+    procName => $proc,
+    headers => \@headers,
+    resultSet => $rs,
+  );
+  $s->render(template => 'main/displayProc');
+}
+
+sub displayOldProc {
+  my $s = shift;
+  if (not $s->session('playerID')) {
+    $s->redirect_to('/ae');
+    return;
+  }
+
   my $dbh = $s->dbh;
 
-  my $proc = $s->req->url->path;
+  my $proc = $s->stash('proc');
   $proc =~ s/.*\///;
   $s->app->log->debug("showing proc p$proc(".$s->session('server').",". $s->session('playerID'));
 
@@ -295,8 +309,8 @@ sub select {
   my $server = $s->req->param('server');
   $s->session(server => $server);
 
-  my $sth = $s->dbh->prepare(qq/
-    update player set defaultServer = ? where playerId = ?
+  my $sth = $s->dbh($server)->prepare(qq/
+    update player set defaultServer = ? where id = ?
       /);
   $sth->execute($server, $s->session('playerID'));
 
@@ -320,6 +334,16 @@ sub login {
     if ($pNfo->{password} eq 'onetwothreefourideclareathumbwar') {
       $s->session(changePass => 1);
     }
+    my $schema = $s->schema($s->session('server'));
+    my $dbPlayer = $schema->resultset('Player')->find($pid);
+    if (defined $dbPlayer) {
+      $s->session('guildTag' => $dbPlayer->guildTag);
+    } else {
+      $s->session('guildTag' => undef);
+    }
+
+    $s->getProcs;
+
   }
   $s->redirect_to('/ae');
 }

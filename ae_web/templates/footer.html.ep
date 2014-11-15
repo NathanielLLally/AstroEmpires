@@ -9,7 +9,7 @@
 %   my $v = $view;
 %   $view =~ s/([A-Z])/ $1/g;
   <span class="pbutton">
-  <a href='<%= url_for("/ae/gis/displayProc/$v") %>'><%= $view %></a>
+  <a href='<%= url_for("/ae/gis/displayOldProc/$v") %>'><%= $view %></a>
   </span>
 % }
 </div>

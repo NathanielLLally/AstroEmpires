@@ -26,6 +26,10 @@
 <h4>password successfully changed</h4>
 %   }
 % } else {
+%= javascript '/js/moment-with-locales.js'
+%= javascript '/js/moment-duration-format.js'
+%= javascript '/debug/fakeGM.js'
+%= javascript '/debug/aegis.user.js'
 <h4>Welcome to the AEGIS frontend</h4>
 To use this script you must:
 <ol>

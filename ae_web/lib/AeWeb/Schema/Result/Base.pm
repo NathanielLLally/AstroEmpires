@@ -50,9 +50,9 @@ __PACKAGE__->table("base");
 
 =head2 guildTag
 
-  accessor: 'guild_tag'
   data_type: 'varchar'
-  is_nullable: 1
+  default_value: (empty string)
+  is_nullable: 0
   size: 9
 
 =head2 location
@@ -83,11 +83,7 @@ __PACKAGE__->add_columns(
     is_nullable => 0,
   },
   "guildTag",
-  {
-    data_type => "varchar",
-    is_nullable => 1,
-    size => 9,
-  },
+  { data_type => "varchar", default_value => "", is_nullable => 0, size => 9 },
   "location",
   { data_type => "varchar", is_nullable => 0, size => 12 },
   "owner",
@@ -102,24 +98,26 @@ __PACKAGE__->add_columns(
 
 =item * L</id>
 
+=item * L</guildTag>
+
 =back
 
 =cut
 
-__PACKAGE__->set_primary_key("id");
+__PACKAGE__->set_primary_key("id", "guildTag");
 
 =head1 RELATIONS
 
-=head2 base_detail
+=head2 base_details
 
-Type: might_have
+Type: has_many
 
 Related object: L<AeWeb::Schema::Result::BaseDetail>
 
 =cut
 
-__PACKAGE__->might_have(
-  "detail",
+__PACKAGE__->has_many(
+  "base_details",
   "AeWeb::Schema::Result::BaseDetail",
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
@@ -129,20 +127,20 @@ __PACKAGE__->might_have(
 
 Type: has_many
 
-Related object: L<AeWeb::Schema::Result::BaseStructure>
+Related object: L<AeWeb::Schema::Result::BaseStructures>
 
 =cut
 
 __PACKAGE__->has_many(
-  "structures",
-  "AeWeb::Schema::Result::BaseStructure",
+  "base_structures",
+  "AeWeb::Schema::Result::BaseStructures",
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
 
 
-# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-07 16:36:54
-# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:eC2xaD7DIQDrIEdGWglt5w
+# Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11
+# DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:NNAZF5lERIR72Hz56Gbddg
 
 
 # You can replace this text with custom code or comments, and it will be preserved on regeneration

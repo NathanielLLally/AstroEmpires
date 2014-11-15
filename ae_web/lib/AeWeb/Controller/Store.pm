@@ -1,5 +1,6 @@
 package AeWeb::Controller::Store;
 use AeWeb::Schema;
+use AeWeb::DBcommon;
 use Mojo::Base 'Mojolicious::Controller';
 use Mojo::JSON;
 use Mojo::IOLoop;
@@ -13,22 +14,7 @@ use DateTime::Format::DateManip;
 use Date::Manip;
 use Data::Dumper;
 
-sub dbh
-{
-  my $s = shift;
-  my $dbh = DBI->connect_cached("DBI:mysql:database=ae;",'ae', 'q1w2e3r4', {'RaiseError' => 1, AutoCommit => 1}) || die $DBI::errstr;
-  $dbh;
-}
-
-#  replicate aeBravo schemas and triggers
-#  show create table
-#
-sub createDatabase
-{
-  my ($s, $db) = @_;
-  my $dbh = $s->dbh;
-  $dbh->do();
-}
+use base 'AeWeb::DBcommon';
 
 sub storeData
 {
@@ -311,40 +297,17 @@ sub storeData
   }
 }
 
-sub schema
-{
-  my ($s,$server) = (@_);
-  my ($db, $key, $schema) = ($server,'_schema_',undef);
-  $db =~ s/^(\S)/ae\u$1/;
-  $key .= $db;
-
-  $schema = $s->{$key};
-  if (defined $schema) {
-    $schema->storage->ensure_connected;
-  } else {
-    try {
-      $schema = $s->{$key} = AeWeb::Schema->connect("dbi:mysql:$db", 'ae', 'q1w2e3r4');
-    } catch {
-      if ($_ =~ /Unknown database/) {
-        $s->createDatabase($db);
-      }
-    };
-    $schema->storage->debugfh(IO::File->new('/tmp/trace.out', 'w'));
-    $schema->storage->debug(1);
-  }
-  $schema;
-}
-
 sub storeDataC
 {
   my ($s, $ae) = @_;
   my ($server, $time, $playerID, $daysOld) = 
     map { $ae->{$_}; } qw/server time playerID daysOld/;
 
+  my $dbh = $s->dbh($server);
   my $schema = $s->schema($server);
   my $dtServer = DateTime::Format::DateManip->parse_datetime(ParseDate($time));
 
-  my $guildTag = '[SoL]';
+  my $guildTag = '';
   my $dbPlayer = $schema->resultset('Player')->find($playerID);
   if (defined $dbPlayer) {
     $guildTag = $dbPlayer->guildTag;
@@ -363,9 +326,26 @@ sub storeDataC
         name => $e->{name},
         level => $e->{level},
         upgraded => $e->{upgraded},
-        guildTag => $guild->{tag},
+        guildTag => $guild->{tag} || '',
         defaultServer => $server,
         });
+    }
+  }
+
+  #  parsing of a recently downloaded galaxy map
+  #
+  if (exists $ae->{regionStars}) {
+    my $sth = $dbh->prepare(qq/
+      insert into regionStars (starLoc) values (?)
+      /);
+
+    foreach my $starLoc (@{ $ae->{regionStars} }) 
+    {
+      try {
+        $sth->execute($starLoc);
+      } catch {
+        die "regionStars insert: $_";
+      };
     }
   }
 
@@ -381,8 +361,10 @@ sub storeDataC
       my $dbAstro = $schema->resultset('Astro')->update_or_create(%col);
     }
 
-    $schema->resultset('PlayerUsage')->update_or_create(
-        {id => $dbPlayer->id, name => 'astroScan', last => $time});
+    if (defined $dbPlayer) {
+      $schema->resultset('PlayerUsage')->update_or_create(
+          {id => $dbPlayer->id, name => 'astroScan', last => $time});
+    }
   }
 
   if (exists $ae->{base}) {
@@ -403,7 +385,7 @@ sub storeDataC
       if (keys %col) {
         $col{time} = $time;
         $col{guildTag} = $guildTag;
-        $dbBase->update_or_create_related('detail', %col);
+        $dbBase->update_or_create_related('base_details', %col);
       }
 
       if (exists $e->{structures}) {
@@ -415,11 +397,13 @@ sub storeDataC
             time => $time,
             guildTag => $guildTag,
             );
-          $dbBase->update_or_create_related('structures', %col);
+          $dbBase->update_or_create_related('base_structures', %col);
         }
 
-        $schema->resultset('PlayerUsage')->update_or_create(
-            {id => $dbPlayer->id, name => 'baseScan', last => $time});
+        if (defined $dbPlayer) {
+          $schema->resultset('PlayerUsage')->update_or_create(
+              {id => $dbPlayer->id, name => 'baseScan', last => $time});
+        }
       }
     }
   }
@@ -468,11 +452,13 @@ sub storeDataC
             time => $time,
             guildTag => $guildTag,
             );
-          $schema->resultset('FleetShip')->update_or_create(%col);
+          $schema->resultset('FleetShips')->update_or_create(%col);
 #          $dbFleet->update_or_create_related('ships', %col);
         }
-        $schema->resultset('PlayerUsage')->update_or_create(
-            {id => $dbPlayer->id, name => 'fleetScan', last => $time});
+        if (defined $dbPlayer) {
+          $schema->resultset('PlayerUsage')->update_or_create(
+              {id => $dbPlayer->id, name => 'fleetScan', last => $time});
+        }
       }
     }
   }
@@ -499,7 +485,7 @@ sub dumpPostData {
       my $dbPlayer = $schema->resultset('Player')->find($playerID);
       if (defined $dbPlayer) {
         $s->app->log->debug(sprintf("%s %s", $dbPlayer->name, $dbPlayer->guildTag));
-    my $dbUsage = $dbPlayer->find_or_create_related('usage', 
+    my $dbUsage = $dbPlayer->find_or_create_related('player-usage', 
             {name => $s->req->headers->header('x-real-ip')});
     $dbUsage->update({ last => $time });
       }
@@ -529,7 +515,6 @@ sub dumpPost {
   if ($json->error) {
     $s->stash(json => { error => $json->error });
     $s->render(status => 400);
-    #$s->render(template => 'main/response', format => 'json');
   } else {
     my ($server, $time, $playerID, $daysOld) = map { $aeData->{$_}; } qw/server time playerID daysOld/;
     my $schema = $s->schema($server);
@@ -537,8 +522,8 @@ sub dumpPost {
       my $dbPlayer = $schema->resultset('Player')->find($playerID);
       if (defined $dbPlayer) {
         $s->app->log->debug(sprintf("%s %s", $dbPlayer->name, $dbPlayer->guildTag));
-    my $dbUsage = $dbPlayer->find_or_create_related('usage', 
-            {name => $s->req->headers->header('x-real-ip')});
+    my $dbUsage = $schema->resultset('PlayerUsage')->find_or_create( 
+            {name => $s->req->headers->header('x-real-ip')}, id => $dbPlayer->id);
     $dbUsage->update({ last => $time });
       }
 
