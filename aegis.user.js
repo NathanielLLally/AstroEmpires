@@ -4,7 +4,9 @@
 // @namespace   http://cirrus.airitechsecurity.com
 // @downloadURL http://cirrus.airitechsecurity.com/dev/js/aegis.user.js
 // @resource    aegis.css    http://cirrus.airitechsecurity.com/dev/css/aegis.css
+// @resource    jquery-ui.css    http://code.jquery.com/ui/1.11.2/themes/smoothness/jquery-ui.css
 // @require     http://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js
+// @require     http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js
 // @require     http://cirrus.airitechsecurity.com/js/moment.min.js
 // @require     http://cirrus.airitechsecurity.com/js/moment-duration-format.min.js
 // @include     *.astroempires.com/*
@@ -24,6 +26,8 @@
 // ==/UserScript==
 
 /* TODO:
+ *
+ *  sendToServer(ctx) for uniform ondispatch callbacks;
  *
  *  ctx have a constructor?
  *  Context.prototype.has = function
@@ -49,11 +53,39 @@ var ships = ['Fighters','Bombers','Heavy Bombers','Ion Bombers','Corvette','Recy
 
 var shipAbbrev = ['ft','b','hb','ib','cv','rc','ds','fri','ifri','s','os','cru','car','hcru','bs','fcar','dred','tit','levi','death'];
 
-
-var GmTimeFormat = "YYYY-MM-DD HH:mm:ss";
 var version = GM_info.script.version;
 console.log("running aegis v"+version+" grease monkey v"+GM_info.version);
 
+moment.prototype.formatDefault = function()
+{
+  return this.format("YYYY-MM-DD HH:mm:ss");
+}
+
+this.trace = {};
+function logTrace(msg) {
+  var s = new Error().shortstack();
+  s.shift(); //this
+  var caller = {
+    trace: s.shift()
+  };
+  caller.fqn = caller.trace.match(/(.*):\d+/)[1];
+  caller.fn = caller.fqn.match(/(.*)@/)[1];
+  caller.line = caller.trace.match(/.*@.*:(\d*)/)[1];
+
+  try {
+    assertHas(aegis.trace[caller.fqn], {marker: "number"});
+    aegis.trace[caller.fqn].marker++;
+  } catch(e) {
+    aegis.trace[caller.fqn] = {marker: 1};
+  }
+
+  var m = aegis.trace[caller.fqn].marker;
+  if (typeof msg === "string") {
+    m = msg;
+  }
+  m = " ["+m+"] line:";
+  console.log("> ",caller.fn, m, caller.line );
+}
 
 /* attempt at creating a tab */
 (this.setTabName = function() {
@@ -101,6 +133,7 @@ function checkForUpdate()
           }
         }
         else{
+    console.log('last updated ', moment(new Date().setTime(GM_getValue('last_update', '0'))).format("YYYY-MM-DD hh:mm:ss"));
           console.log('No update is available for "'+script_name+'"');
           consoleMsg('no new update for "'+script_name+'"');
         }
@@ -108,7 +141,7 @@ function checkForUpdate()
       }
     });
   } else {
-    console.log('last updated ' + GM_getValue('last_update', '0'));
+    console.log('last updated ', moment(new Date().setTime(GM_getValue('last_update', '0'))).format("YYYY-MM-DD hh:mm:ss"));
     //    consoleMsg('last update check ' + ( parseInt(((new Date().getTime()) - GM_getValue('last_update', '0')) / 1000)) + 's ago');
   }
 
@@ -134,6 +167,9 @@ function checkSendBufferCache()
       sendToServer(data, route, cbString);
     }
     /*
+    if (key.match(/^setting:/)) {
+      GM_deleteValue(key);
+    }
     if (key.match(/^starMap:/)) {
       GM_deleteValue(key);
     }
@@ -323,16 +359,6 @@ function getElement(obj){
 
   return obj;
 }
-function toggleHeight (obj){
-  var cls = obj.className;
-  if (cls.match(/^(.*?)-?small$/)) {
-    obj.className = cls.match(/^(.*?)-?small$/)[1];
-  } else {
-    obj.className = cls + '-small';
-  }
-  console.log(obj);
-  GM_setValue("setting:className:"+obj.id, obj.className);
-}
 
 /*  toggle an objects visible style settings
  *    (display, visibility, and zIndex)
@@ -374,31 +400,6 @@ function toggle (obj, displayType, state){
   GM_setValue("setting:style:display:" +obj.id, obj.style.display);
   GM_setValue("setting:style:visibility:" +obj.id, obj.style.visibility);
   GM_setValue("setting:style:zIndex:" +obj.id, obj.style.zIndex);
-}
-
-/*  restore visiblity style settings if cached
- *
- */
-function restoreSettings(obj)
-{
-  var value;
-  value = GM_getValue("setting:style:display:"+obj.id);
-  if (value != undefined) {
-    obj.style.display = value;
-  }
-  value = GM_getValue("setting:style:visibility:"+obj.id);
-  if (value != undefined) {
-    obj.style.visibility = value;
-  }
-  value = GM_getValue("setting:style:zIndex:"+obj.id);
-  if (value != undefined) {
-    obj.style.zIndex = value;
-  }
-
-  value = GM_getValue("setting:className:"+obj.id);
-  if (value != undefined) {
-    obj.className = value;
-  }
 }
 
 function show(obj, displayType){
@@ -500,15 +501,28 @@ function updateGalaxyRegion () {
   var t = window.setTimeout(updateGalaxyRegion, 500);
 }
 
-function myFleetAt(location)
+function myFleet(id)
 {
-  var fleet = JSON.parse(GM_getValue("myfleet:at:"+location, {}));
-  console.log(JSON.stringify(fleet));
-  return fleet;
+  logTrace(id);
+  return JSON.parse(GM_getValue("myfleet:"+id, {}));
 }
 
+function myFleetAt(location)
+{
+  var fleet = JSON.parse(GM_getValue("myfleet:at:"+location, null));
+  return fleet;
+}
+function myFleetsTo(location)
+{
+  logTrace(location);
+  var fleets = JSON.parse(GM_getValue("myfleets:to:"+location, "[]"));
+  logTrace(JSON.stringify(fleets));
+  return fleets;
+}
+
+
 function ctxMoveScout(ctx) {
-  moveScout(ctx.fromLoc, ctx.ToLoc);
+  moveScout(ctx.fromLoc, ctx.toLoc);
 }
 
 function moveScout(fromLoc, toLoc)
@@ -516,12 +530,77 @@ function moveScout(fromLoc, toLoc)
   console.log('moveScout '+fromLoc + " to "+toLoc);
   var data = {};
   var fleet = myFleetAt(fromLoc);
-  if (fleet.id != null) {
+  if (fleet != null) {
+    logTrace();
     data.destination = toLoc;
     data['Scout Ship'] = 1;
-    sendMoveFleet(fleet.id, data);
+    sendMoveFleet({fleetID:fleet.id, data:data, origin:fromLoc, onarrive:"ctxReturnHome" }); 
   } else {
     consoleMsg('no fleet @ '+fromLoc, "errMsg");
+  }
+}
+
+this.ctxReturnHome = function(ctx)
+{
+  logTrace();
+
+  ctx.url = serverURL+"/fleet.aspx";
+  ctx.msg =  "verifying arrival";
+  ctx.onload = "ctxLoadDispatch";
+  ctx.ondispatch = "sendMoveFleet";
+
+  var origin = ctx.origin;
+  ctx.origin = ctx.data.destination;
+  ctx.data.destination = origin;
+
+  console.log(ctx);
+  ctxQueueGet(ctx);
+
+  if (!isSending()) {
+    sendQueued({doneMsg: "fleet sent home"});
+  }
+
+}
+
+this.ctxCheckFleet = function(ctx) {
+  logTrace(JSON.stringify(ctx));
+  assertHas(ctx,{destination: "string"});
+
+  var ids = myFleetsTo(ctx.destination);
+  var fleetSent;
+  ids.forEach(function(el, i , a) {
+    logTrace(el);
+    var fleet = myFleet(el);
+    if (fleet.origin == ctx.origin) {
+      if (fleetSent == null) {
+        fleetSent = fleet;
+      }
+      if (fleet.id >= fleetSent.id) {
+        fleetSent = fleet;
+      }
+    }
+  });
+  logTrace(JSON.stringify(fleetSent));
+
+/*  errors:
+  You can only move a fleet 5 seconds after it arrives at a location
+  */
+
+  ctx.fleetID = fleetSent.id;
+  consoleMsg(fleetSent.name + ' checked in' +'<br>&nbsp;&nbsp;bound for '+ctx.data.destination);
+
+  //  onarrival
+  //
+  try {
+    assertHas(ctx, {onarrive: "string"});
+    consoleMsg('on arrival: '+ctx.onarrive);
+    var callback = ctx.onarrive;
+    delete ctx.onarrive;
+    window.setTimeout( function() {
+      aegis[callback](ctx);
+    }, (parseInt(fleetSent.arrival) + 6) * 1000);
+  } catch(e) {
+    logTrace(e.message);
   }
 }
 
@@ -533,15 +612,29 @@ function moveScout(fromLoc, toLoc)
 
 //function moveFleet(aeData, url, doc)
 
-function sendMoveFleet(fleetID, data)
+this.sendMoveFleet = function(ctx)
 {
+  logTrace();
+  console.log(ctx);
+
+  //  if origin got into the context,
+  //    it's a returnHome trip
+  //
+  if (typeof ctx.origin === "string") {
+    var fleet = myFleetAt(ctx.origin);
+    ctx.fleetID = fleet.id;
+  }
+
   var units = [];
+  var fleetID = ctx.fleetID,
+      data = ctx.data;
+
   if (data.destination == null) {
-    consoleLog('sendMoveFleet: no destination!', "errMsg");
+    consoleMsg('sendMoveFleet: no destination!', "errMsg");
     console.log('sendMoveFleet: no destination!');
     return;
   }
-  console.log(JSON.stringify(data));
+//  console.log(JSON.stringify(data));
   for (var k in data) {
     console.log(k);
     console.log(data[k]);
@@ -583,15 +676,22 @@ function sendMoveFleet(fleetID, data)
       console.log("onerror :"+response);
     },
     onload: function(response) {
-      var doc = responseDoc(response.responseText);
-      var el = doc.getElementsByClassName("error");
+      logTrace();
+      ctx.html = response.responseText;
+      ctx = ctxResponseDoc(ctx);
+      var el = ctx.doc.getElementsByClassName("error");
       if (el != null && el.length > 0) {
         consoleMsg('problem with spacedocks!<br>&nbsp;&nbsp;' + el[0].textContent, "errorMsg");
         console.log("moveFleet error: "+el[0].textContent);
       } else if (response.responseText.indexOf("Fleet movement started") > -1) {
         consoleMsg('fleet embarked', "noticeMsg");
-        console.log(response.responseText);
-        document.location.href = serverURL + "/fleet.aspx";
+
+//        document.location.href = serverURL + "/fleet.aspx";
+        ctx.url = serverURL + '/fleet.aspx';
+        ctx.destination = data.destination;
+        ctx.ondispatch = "ctxCheckFleet";
+        ctxLoadDispatch(ctx);
+
       }
     }
   });
@@ -625,6 +725,7 @@ function moveFleetFromForm()
   var fleetID;
   var el = document.URL.match(/fleet\.aspx\?fleet=(\d+)&view=move/);
   if (el == null) {
+    consoleMsg("use move fleet form", "errMsg");
     return;
   } else {
     fleetID = el[1];
@@ -676,7 +777,7 @@ function moveFleetFromForm()
   var sendPost = (function(f, d) {
     return function () {
       console.log('calling sendMoveFleet '+f +" : "+d);
-      sendMoveFleet(f, d);
+      sendMoveFleet({fleetID:f, data: d});
     };
   })(fleetID, data);
 
@@ -772,173 +873,189 @@ function moveFleetFromForm()
 
 }
 
-
-(this.makeConsole = function () {
-  if (!document.location.href.match(/\/(.+?).astroempires.com/)) { return; }
-
-  var container = document.getElementById("aegisConsole-Container");
-  var consoleHeader = document.getElementById("aegisConsole-Header");
-  var aconsole = document.getElementById("aegisConsole");
-  var toolbox = document.getElementById('aegisConsole-Toolbox');
-
-  if (!consoleHeader){
-    var colorBlueLight = '#6f8dac', colorBlueDark = '#3c5268',
-    colorPurpleLight = '#EB7AE1', colorPurpleDark = '#301070';
-
-    //create console element
-    consoleHeader = document.createElement("div");
-    consoleHeader.id = "aegisConsole-Header";
-    consoleHeader.className = "aegisConsole-Header";
-    consoleHeader.innerHTML=("<span id='aegis-tag'><b>aegis v"+version+"</b></span>");
-
-    var consoleHeaderClick = function(){ toggle(toolbox); toggle(aconsole);};
-    registerEvent(consoleHeader, "click", consoleHeaderClick);
-
-    //		document.body.appendChild(consoleHeader);
+/*  restore visiblity style settings if cached
+ *  and class 
+ */
+function restoreToggle(id)
+{
+  var value;
+  value = GM_getValue("setting:hidden:"+id, 0);
+  logTrace(id + ":" +value);
+  if (value) {
+    $("#"+id).hide();
   }
-  if (!toolbox) {
-    toolbox = document.createElement("div");
-    toolbox.id = "aegisConsole-Toolbox";
-    toolbox.className = 'aegisConsole-Toolbox';
+}
+function restoreClass(id) 
+{
+  value = GM_getValue("setting:class:"+id);
+  logTrace(id + ":" +value);
+  if (value != null) {
+    $("#"+id).attr('class', value);
+  }
+}
 
-    var btnScanRegion = document.createElement('span');
-    btnScanRegion.id='btnScanRegion';
-    btnScanRegion.className = 'aegisToolbox-button';
-    btnScanRegion.innerHTML = 'Scan Region';
+      
+this.ConsoleToolbox = function() {
+  logTrace();
+  var $toolbox = $("#aegisConsole-Toolbox");
+  if (! $toolbox.length) {
+    $toolbox = $(document.createElement("div"))
+      .attr({id: "aegisConsole-Toolbox"})
+      .attr('class', 'aegisConsole-Toolbox');
+    /*
+      .hover( function () {
+        $(this).fadeTo(0,1);
+      }, function() {
+        $(this).fadeTo(0, 0.7);
+      });
+      */
 
-    toolbox.appendChild(btnScanRegion);
+  this.tbxSection = function(txt) {
+    var id = "tbx"+txt.replace(/ /,"");
 
-    var curGalReg = document.createElement('span');
-    curGalReg.id='curGalReg';
-    curGalReg.className='curGalReg';
-    toolbox.appendChild(curGalReg);
-    //  updateGalaxyRegion(); - depends on document.getElementById, wait
-    //    for toolbox to be added
+    var $div = $(document.createElement("div"))
+      .attr({id: id})
+      .attr('class', 'aegisToolbox');
 
+    $(document.createElement("div"))
+      .attr('class', 'aegisToolbox-Section')
+      .html(txt)
+      .click( function() {
+        $div.toggle();
+        GM_setValue('setting:hidden:'+id, $div.is(':hidden'));
+      })
+      .appendTo($toolbox);
 
-//  Scan region    
-    var btnDM = document.createElement('span');
-    btnDM.id='btnScanRegion';
-    btnDM.className = 'aegisToolbox-button';
-    btnDM.innerHTML = 'Timed Move Fleet';
-    toolbox.appendChild(document.createElement('br'));
-    toolbox.appendChild(btnDM);
-    toolbox.appendChild(document.createElement('br'));
+     $div.appendTo($toolbox);
 
+    return $div;
+  }
 
+  var $tbxScan = tbxSection('Scan');
+
+//  Scan region
+    $( document.createElement('span') )
+      .attr('class', 'aegisToolbox-button')
+      .html( 'Scan Region')
+      .click( function() {
+        var title = $('#curGalReg').html();
+        if (typeof title === "string") {
+          document.title = title + ' scan';
+          scanRegion(title);
+        } else {
+          consoleMsg("no region selected!","errMsg");
+        }
+      })
+      .appendTo($tbxScan);
+
+    $( document.createElement('span') )
+      .attr({id:'curGalReg'})
+      .attr('class','curGalReg')
+      .appendTo($tbxScan);
+
+  var $tbxFleet = tbxSection('Fleet Operations');
 // delayed move fleet    
-    var inpTime = document.createElement('input');
-    inpTime.id='moveFleetTime';
-    inpTime.name='moveFleetTime';
-    inpTime.className='aegisToolbox-text';
+    $(document.createElement('span'))
+      .attr('id','btnTimedMoveFleet')
+      .attr('class','aegisToolbox-button')
+      .html(' Timed Move Fleet ')
+      .click( function() { moveFleetFromForm(); })
+      .appendTo($tbxFleet);
 
-    inpTime.setAttribute("type", "text");
+    var mST = new moment(new Date(
+          $('#server-time').attr("title")
+          ));
+    mST.add(10, 'seconds');
 
-    elem=document.getElementById('server-time');
-    if (elem != null) {
-      var serverTime = elem.getAttribute("title");
-      var mST = new moment(new Date(serverTime));
-      mST.add(10, 'seconds');
-      inpTime.setAttribute("value", mST.format("YYYY/MM/DD HH:mm:ss"));
-    }
+    $( document.createElement('input') )
+      .attr('id','moveFleetTime')
+      .attr('name','moveFleetTime')
+      .attr('class','aegisToolbox-text')
+      .attr("type", "text")
+      .attr("value", mST.format("YYYY/MM/DD HH:mm:ss"))
+      .change(function() {
+        console.log($(this).val());
+      })
+      .appendTo($tbxFleet);
 
-    toolbox.appendChild(inpTime);
+// move scout
+//
+    $( document.createElement('span') )
+      .attr('id','btnMoveScout')
+      .attr('class','aegisToolbox-button wideRight')
+      .html('     Move Scout      ')
+      .click( function () { 
+        moveScout($('#moveScoutFrom').val(),
+          $('#moveScoutTo').val());
+      })
+      .appendTo($tbxFleet);
+    
 
-// move scout    
-    var btnMS = document.createElement('span');
-    btnMS.id='btnMoveScout';
-    btnMS.className = 'aegisToolbox-button';
-    btnMS.innerHTML = 'Move Scout';
+    $( document.createElement('span') )
+      .html("From: ")
+      .attr('class', 'aegisToolbox-label')
+      .appendTo($tbxFleet);
 
-    var inpLoc = document.createElement('input');
-    inpLoc.id='moveScoutFrom';
-    inpLoc.name='moveScoutFrom';
-    inpLoc.setAttribute('maxlength','12');
-    inpLoc.className='reset-this aegisLoc';
-    inpLoc.setAttribute("type", "text");
+    $( document.createElement('input') )
+      .attr({id:'moveScoutFrom'})
+      .attr('name','moveScoutFrom')
+      .attr('maxlength','12')
+      .attr('class', 'reset-this aegisLoc hasLabel')
+      .attr("type", "text")
+      .change(function() {
+        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
+      })
+      .appendTo($tbxFleet);
 
-    var inpTo = document.createElement('input');
-    inpTo.id='moveScoutTo';
-    inpTo.setAttribute('maxlength','12');
-    inpTo.name='moveScoutTo';
-    inpTo.className='reset-this aegisLoc';
-    inpTo.setAttribute("type", "text");
+    $(document.createElement('br')).appendTo($tbxFleet);
 
+    $( document.createElement('span') )
+      .html("To: ")
+      .attr('class', 'aegisToolbox-label')
+      .appendTo($tbxFleet);
 
-var lbl = document.createElement('span');
-lbl.innerHTML = "From: ";
-lbl.className = 'aegisToolbox-label';
-var lbl2 = document.createElement('span');
-lbl2.innerHTML = "To: ";
-lbl2.className = 'aegisToolbox-label';
+    $(document.createElement('input'))
+      .attr({id: 'moveScoutTo'})
+      .attr('maxlength','12')
+      .attr('name','moveScoutTo')
+      .attr('class','reset-this aegisLoc hasLabel')
+      .attr("type", "text")
+      .change(function() {
+        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
+      })
+      .appendTo($tbxFleet);
 
-    toolbox.appendChild(document.createElement('br'));
-    toolbox.appendChild(btnMS);
-    toolbox.appendChild(document.createElement('br'));
-    toolbox.appendChild(lbl);
-    lbl.appendChild(inpLoc);
-    toolbox.appendChild(document.createElement('br'));
-    toolbox.appendChild(lbl2);
-    lbl2.appendChild(inpTo);
-
-// button callbacks
-
-    registerEvent(btnScanRegion, "click", function() {
-      var curGalReg = document.getElementById('curGalReg');
-      if (curGalReg != null && curGalReg.textContent.length > 0) {
-        document.title = curGalReg.textContent + ' scan';
-        scanRegion(curGalReg.textContent);
-      } else {
-        consoleMsg("no region selected!","errMsg");
-      }
-    });
-
-    registerEvent(btnDM, "click", function() { moveFleetFromForm(); });
-
-    registerEvent(btnMS, "click", function () { 
-      moveScout(document.getElementById('moveScoutFrom').value,
-        document.getElementById('moveScoutTo').value);
-    });
+  var $tbxConsole = tbxSection('Console');
+    $tbxConsole.append(ConsoleConsole());
 
   }
+  return $toolbox;
+}
 
-  if (!aconsole) {
-    aconsole = document.createElement("div");
-    aconsole.id = "aegisConsole";
-    aconsole.className = 'aegisConsole';
+this.ConsoleConsole = function() {
+  logTrace();
+  var $console = $("#aegisConsole");
+  if (! $console.length) {
+//    var $hdr = tbxSection('Console');
 
-    var consoleClick = function(){ toggleHeight(aconsole); };
-    //var pageScroll = function(){ console.style.left = getScrollX()+"px"; console.style.top = getScrollY()+"px"; };
-
-    //set events
-    registerEvent(aconsole, "click", consoleClick);
-    //registerEvent(document.body, "scroll", pageScroll);
-    //window.onscroll = pageScroll;
-
-    //		document.body.appendChild(aconsole);
-
-    aconsole.innerHTML = GM_getValue('aegisConsole:'+getTabID(), "tabID: "+getTabID());
+    $console = $(document.createElement("div"))
+      .attr({id: "aegisConsole", class: 'aegisConsole'})
+      .click( function() {
+        var $el = $("#aegisConsole");
+        var m = $el.attr('class').match(/^(.*?)(-small)?$/);
+        if (typeof m[2] === "string") {
+          $el.attr('class', m[1]);
+        } else if (typeof m[1] === "string") {
+          $el.attr('class', m[1] + '-small');
+        }
+        GM_setValue("setting:class:aegisConsole", $el.attr('class'));
+      })
+      .html( GM_getValue('aegisConsole:'+getTabID(),
+            "tabID: "+getTabID()) );
   }
+  return $console;
 
-  if (!container){
-    container = document.createElement("div");
-    container.id = "aegisConsole-Container";
-    container.className = "aegisConsole-Container";
-
-    container.appendChild(consoleHeader);
-    container.appendChild(toolbox);
-    container.appendChild(aconsole);
-
-    restoreSettings(toolbox);
-    restoreSettings(aconsole);
-
-    document.body.insertBefore(
-        container, 
-        document.body.firstChild
-        );
-
-    updateGalaxyRegion();
-  }
+}
 
   this.consoleMsg = function(msg, level)
   {
@@ -947,14 +1064,71 @@ lbl2.className = 'aegisToolbox-label';
     }
 
     if (typeof(msg) == "string") {
-      msg = msg + "<br>" + aconsole.innerHTML;
-      aconsole.innerHTML = msg;
-      GM_setValue('aegisConsole:'+getTabID(), msg);
+//      msg = msg + "<br>" + $console.html();
+      $("#aegisConsole").prepend(msg + "<br>");
+      GM_setValue('aegisConsole:'+getTabID(), $("#aegisConsole").html());
     } else {
       console.log('consolMsg: '+typeof(msg));
     }
   }
-})();
+
+this.makeConsole = function () {
+  if (!document.location.href.match(/\/(.+?).astroempires.com/)) { return; }
+
+  logTrace();
+
+  var $hdr = $(document.createElement("div"))
+    .attr({id: "aegisConsole-Header"})
+    .attr("class", "aegisConsole-Header")
+    .html("<b id='aegis-tag'>aegis v"+version+"</b>")
+    .click(function() {
+      var $tbx = ConsoleToolbox();
+      $tbx.toggle();
+      GM_setValue('setting:hidden:'+ $tbx.attr('id'), $tbx.is(':hidden'));
+    });
+
+  var $container = $("#aegisConsole-Container");
+  if ($container.length == 0) {
+    $container = $(document.createElement("div"))
+      .attr({id:"aegisConsole-Container"})
+      .addClass("aegisConsole-Container")
+      .append( $hdr )
+      .append( ConsoleToolbox() )
+      .prependTo('body');
+
+    restoreClass('aegisConsole');
+    //$(".aegisToolbox").hide();
+    $(".aegisToolbox").each(function(i) { 
+      console.log(i, $(this).attr('id'));
+      restoreToggle($(this).attr('id'));
+    });
+    restoreToggle(ConsoleToolbox().attr('id'));
+
+    $("input").each(function(i) {
+      var id = $(this).attr('id');
+      var val = GM_getValue("setting:val:"+id, null);
+      if (val != null) {
+        $( "#"+id ).val(val);
+      }
+    });
+  }
+
+  /*
+  var re = new RegExp(/([A-Za-z][0-9]{2}):([0-9]{2})/);
+  var gr = re.exec(decodeURIComponent(document.URL));
+  if (gr.length) {
+    $( '#curGalReg' ).html(gr[1]+":"+gr[2]);
+  }
+  $("#getLocation").change(function() {
+    console.log('getLoc changed');
+    var gr = re.exec( $(this).val() );
+    if (gr.length) {
+      $( '#curGalReg' ).html(gr[1]+":"+gr[2]);
+    }
+  });
+*/
+  updateGalaxyRegion();
+};
 
 function myTimeTimer()
 {
@@ -1556,11 +1730,19 @@ function parseFleet(aeData, url, doc) {
   var key = keys[0];
   for (var i=0; key != null; key=keys[i++] ) {
 
-    if(key.match(/^myfleet:/)) {
+    if(key.match(/^myfleets?:/)) {
       GM_deleteValue(key);
     }
   }
-
+  
+    var dest = {
+      add: function(loc, id) {
+        if (this[loc] == null) {
+          this[loc] = [];
+        }
+        this[loc].push(id);
+      }
+    };
     for (i=0; i<tr.length; i++) {
       var fleet = {};
       var td = tr[i].getElementsByTagName('td');
@@ -1575,6 +1757,8 @@ function parseFleet(aeData, url, doc) {
         fleet.origin = fleet.location;
         delete fleet.location;
         fleet.arrival = td[3].getAttribute('sorttable_customkey');
+      } else {
+        delete fleet.destination;
       }
 
       fleet.size = td[4].getAttribute('sorttable_customkey');
@@ -1587,6 +1771,15 @@ function parseFleet(aeData, url, doc) {
 
       if (fleet.location != null) {
         GM_setValue("myfleet:at:"+ fleet.location, JSON.stringify(fleet));
+      }
+      if (fleet.destination != null) {
+        dest.add(fleet.destination, fleet.id);
+      }
+    }
+    for (var i in dest) {
+      if (i != "add") {
+        logTrace(i + ":" + JSON.stringify(dest[i]));
+        GM_setValue("myfleets:to:"+ i, JSON.stringify(dest[i]));
       }
     }
     return;
@@ -2136,20 +2329,31 @@ function listViewableStars()
   }
 }());
 
-function assertCtx(ctx, keyTypes)
-{
-  if (ctx == null && typeof ctx != "object") {
-    throw new Error('invalid context!');
+/*
+ * object prototype will add this to every object
+function assert(ctx, types) {
+  if (typeof (ctx) !== 'object') {
+    throw new Error('invalid context: ' + typeof (ctx));
   }
-  if (keyTypes != null && typeof keyTypes == "object") {
-    for (i in keyTypes) {
-      if (typeof keyTypes[i] == "string") {
-        if (typeof ctx[i] != keyTypes[i]) {
-          throw new Error('assertion '+i+' isa '+keyTypes[i]);
-        }
-      } else if (typeof keyTypes[i] == "number") {
-        console.log('implement me 198746');
+  if (typeof (types) === 'object') {
+    for (var i in types) {
+      if (typeof (ctx[i]) !== typeof (types[i])) {
+        throw new Error('assertion ' + i + ' requires ' + typeof (types[i]) + ', given ' + typeof (ctx[i]));
+      }
+    }
+  }
+}
+ */
 
+function assertHas(ctx, types) {
+  if (typeof (ctx) !== 'object') {
+    throw new Error('invalid context: ' + typeof (ctx));
+  }
+  //    ctx.assert(types);
+  if (typeof (types) === 'object') {
+    for (var i in types) {
+      if (typeof (ctx[i]) !== types[i]) {
+        throw new Error('assertion ' + i + ' requires ' + types[i] + ', given ' + typeof (ctx[i]));
       }
     }
   }
@@ -2159,12 +2363,7 @@ var sendQ = {
   items: 0,
   head: 0,
   push: function(ctx) {
-    try {
-      assertCtx(ctx, {url: "string", msg: "string"});
-    } catch(e) {
-      console.log(e);
-      return;
-    }
+    assertHas(ctx, {url: "string", msg: "string"});
 
     var tag = 'sendQ:'+ getTabID();
     var tail = GM_getValue(tag+':tail',0);
@@ -2189,7 +2388,7 @@ var sendQ = {
     console.log('head '+head+ ' url '+ctx.url);
 
     try {
-      assertCtx(ctx, {url: "string", msg: "string"});
+      assertHas(ctx, {url: "string", msg: "string"});
     } catch(e) {
       console.log(e);
       return;
@@ -2268,7 +2467,7 @@ function sendQueued(ctx)
   //    console.log('urls:'+sendQ.length);
   //  console.log(' items pre shift '+sendQ.items);
   var sqCtx = sendQ.shift();
-//  assertCtx(sqCtx, {url: "string", msg: "string"});
+//  assertHas(sqCtx, {url: "string", msg: "string"});
 
   //  console.log('tuple '+tuple);
   //  console.log(' items post shift '+sendQ.items);
@@ -2297,7 +2496,7 @@ function sendQueued(ctx)
         //  every queue item can have its own onload callback
         // 
         try {
-          assertCtx(sqCtx, {onload: "string"});
+          assertHas(sqCtx, {onload: "string"});
 
           aegis[sqCtx.onload](sqCtx);
 
@@ -2339,7 +2538,7 @@ RegExp.quote = function(str) {
 
 this.ctxQueueGet = function(ctx)
 {
-  assertCtx(ctx, {url: "string", msg: "string"});
+  assertHas(ctx, {url: "string", msg: "string"});
 
   var re = new RegExp(RegExp.quote(serverURL));
 
@@ -2350,7 +2549,7 @@ this.ctxQueueGet = function(ctx)
   //  unless specified, user wants ctxDispatch as onload callback
   //
   try {
-    assertCtx(ctx, {onload: "string"});
+    assertHas(ctx, {onload: "string"});
   } catch(e) {
     ctx.onload = "ctxDispatchResponse";
   }
@@ -2393,7 +2592,6 @@ this.scanRegion = function(region)
 
 function ctxResponseDoc(ctx)
 {
-  console.log('ctxResponseDoc');
   var htmlParse = new DOMParser();
 
   ctx.doc = htmlParse.parseFromString(ctx.html, 'text/html');
@@ -2402,13 +2600,14 @@ function ctxResponseDoc(ctx)
   return ctx;
 }
 
-function responseDoc(html)
+this.ctxLoadDispatch = function(ctx)
 {
-  console.log('responseDoc');
-  var htmlParse = new DOMParser();
+  logTrace(ctx.msg);
 
-  var doc = htmlParse.parseFromString(html, 'text/html');
-  return doc;
+//  console.log(JSON.stringify(ctx));
+//  $( 'html' ).prepend(ctx.doc);
+
+  ctxDispatchResponse(ctx);
 }
 
 this.ctxDispatchResponse = function(ctx)
@@ -2416,7 +2615,7 @@ this.ctxDispatchResponse = function(ctx)
   console.log('ctxDispatchResponse');
 
   try {
-    assertCtx(ctx, {doc: "object"});
+    assertHas(ctx, {doc: "object"});
   } catch(e) { console.log(e); return; }
 
   ctx.follow = "all";
@@ -2424,6 +2623,9 @@ this.ctxDispatchResponse = function(ctx)
 
 }
 
+/*  stack trace that fits nicely in the console
+ *
+ */
 Error.prototype.shortstack = function()
 {
   var stack = this.stack,
@@ -2433,12 +2635,12 @@ Error.prototype.shortstack = function()
   while (line = re.exec(stack)) {
     ss.push(line[1] + "@" + line[2] + ":" + line[3]);
   }
-  return ss.join("\n&nbsp;&nbsp;");
+  return ss;
 }
 
 function dispatch(ctx) {
   try {
-    assertCtx(ctx, {url: "string", doc: "object"});
+    assertHas(ctx, {url: "string", doc: "object"});
   } catch(e) { console.log(e); return; }
 
   var url = decodeURIComponent(ctx.url),
@@ -2541,20 +2743,31 @@ function dispatch(ctx) {
       }
       /*
   try {
-    assertCtx(ctx, {ondispatch: "string"});
+    assertHas(ctx, {ondispatch: "string"});
 
     console.log('calling ondispatch: ', ctx.ondispatch);
     aegis[ctx.ondispatch](ctx);
   };
 */
-
+      //  not every dispatch will result in a send to aegis server
+      //  ensure ondispatch gets called anyway
+      //
       if (aeData.hasData()) {
         sendToServer(aeData, aegisURLstore, ctx.ondispatch);
+      } else {
+        if (typeof ctx.ondispatch === "string") {
+        logTrace("ondispatch: "+ctx.ondispatch);
+          try {
+            aegis[ctx.ondispatch](ctx);
+          } catch(e) {
+            console.log('error: ', e);
+          }
+        }
       }
     }
   } catch(e) {
     console.log(e);
-    consoleMsg(e.shortstack(), "errMsg"); 
+    consoleMsg(e.shortstack().join("\n&nbsp;&nbsp;"), "errMsg"); 
     /*
     var errorMsg = {
       "server": server,
@@ -2569,10 +2782,15 @@ function dispatch(ctx) {
   }
 }
 
+/*  have to actually load the resources specified in header
+ */
 function doResources()
 {
-  var res = GM_getResourceText('aegis.css');
-  GM_addStyle(res);
+  var css = ['aegis.css', 'jquery-ui.css'];
+  css.forEach(function(el, i, a) {
+    var res = GM_getResourceText(el);
+    GM_addStyle(res);
+  });
 }
 
 function CurrentServerTime()
@@ -2588,7 +2806,7 @@ function CurrentServerTime()
 this.ctxRunCmd = function(ctx)
 {
   console.log('ctxRunCmd ', ctx);
-  assertCtx(ctx, {func: "string", ctx: "object"});
+  assertHas(ctx, {func: "string", ctx: "object"});
   var cmd = ctx.func;
   var cmdCtx = ctx.ctx;
 
@@ -2597,7 +2815,7 @@ this.ctxRunCmd = function(ctx)
   try {
     aegis[cmd](cmdCtx);
   } catch(e) {
-    consoleMsg(e.message + "<br>"+cmd+"<br>"+e.shortstack, "errMsg");
+    consoleMsg(e.message + "<br>"+cmd+"<br>"+e.shortstack().join("\n&nbsp;&nbsp;"), "errMsg");
   }
 
   if (cmd == "ctxQueueGet" && (! (isSending()))) {
@@ -2610,7 +2828,7 @@ this.ctxRunCmd = function(ctx)
 this.queryResponse = function(ctx)
 {
   try {
-    assertCtx(ctx, {response: "object"});
+    assertHas(ctx, {response: "object"});
 
     for (i in ctx.response) {
       console.log("queryResponse: ",i, " => ", ctx.response[i]);
@@ -2618,7 +2836,7 @@ this.queryResponse = function(ctx)
 
   } catch(e) {}
   try {
-    assertCtx(ctx, {command: "object"});
+    assertHas(ctx, {command: "object"});
 
     console.log("server sent command: ", ctx.command);
     var cmdCtx = ctx.command;
@@ -2642,8 +2860,17 @@ this.randomAstro = function(ctx)
 
 $(document).ready(function() {
 
+  checkForUpdate();
   checkSendBufferCache();
-
+  makeConsole();
+  /*
+  $(document.createElement("div"))
+    .attr({id: "test"})
+    .attr("class", "reset-this aegisToolbox ui-widget-content")
+    .html("<b id='aegis-tag'>weeeee</b>")
+    .draggable()
+    .appendTo('body');
+  */
   dispatch({url: document.URL, doc: document});
   
   //randomAstro({randomAstro: "B39:55"});
@@ -2662,9 +2889,9 @@ if (document.location.href.match(/(.+?)astroempires.com/)) {
       + " tz offset:" + localTimeZoneOffset);
 }
 
+//sendQ.push({blah: 1});
 
 doResources();
 setTabName();
-checkForUpdate();
 
 console.log("aegis loaded successfully");

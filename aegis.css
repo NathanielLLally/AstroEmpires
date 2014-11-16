@@ -163,11 +163,11 @@
 }
 .errMsg,
 .errorMsg {
-  font: bold 14px verdana,arial;
+  font: bold 12px verdana,arial;
   color: red;
 }
 .panicMsg {
-  font: bold 16px verdana,arial;
+  font: bold 14px verdana,arial;
   color: red;
   text-decoration: blink;
   -moz-text-blink: blink;
@@ -192,45 +192,10 @@
 //  position: absolute;
   white-space: pre;
   background-color: #3c5268;
-  opacity:  .7;
   z-index: 9999999;
   color:  white;
   font-size: 10px;
   overflow-y: hidden;
-}
-
-.aegisConsole-small,
-.aegisConsole {
-  color:  white;
-  font-size: 10px;
-  white-space: pre;
-  left: 7px;
-  background-color: #3c5268;
-  opacity:  .7;
-  padding-left: 4px;
-  width: 196px;
-  height: 52em;
-  overflow-y: scroll;
-}
-.aegisConsole-small {
-  height: 12em;
-}
-
-
-.aegisConsole-Header {
-  height: 20px;
-  text-align: center;
-  background-color: #3c5268;
-  opacity:  .9;
-  color: #EB7AE1;
-  font-size: 12px;
-}
-
-.aegisConsole-Toolbox.span {
-  border: 1px solid black;
-//  margin-top:15px;
-//  padding-top:15px;
-  cursor: pointer;
 }
 
 .aegisConsole-Toolbox {
@@ -240,6 +205,59 @@
   font-size:12px;
   float: right;
   border-bottom: 1px solid black;
+  opacity:  .9;
+}
+
+.aegisConsole-small,
+.aegisConsole {
+  color:  white;
+  font-size: 10px;
+  white-space: pre;
+  left: 7px;
+  background-color: #3c5268;
+  padding-left: 4px;
+  width: 196px;
+  height: 52em;
+  overflow-y: scroll;
+  margin-bottom: 0px;
+  padding-bottom: 0px;
+}
+
+.aegisConsole-small {
+  height: 12em;
+}
+
+.aegisToolbox
+{
+  white-space: pre;
+  background-color: #3c5268;
+  z-index: 9999999;
+  color:  white;
+  font-size: 10px;
+  overflow-y: hidden;
+  margin-bottom: 6px;
+}
+
+
+.aegisConsole-Header {
+  height: 20px;
+  text-align: center;
+  background-color: #3c5268;
+  color: #EB7AE1;
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+.aegisConsole-Toolbox.span {
+  border: 1px solid black;
+//  margin-top:15px;
+//  padding-top:15px;
+  cursor: pointer;
+}
+
+.wideRight {
+  margin-right:50px;
+  padding-right:20px;
 }
 
 .aegisToolbox-button {
@@ -248,7 +266,7 @@
   margin-left: 5px;
   margin-top: 5px;
   margin-right:10px;
-  color: #dddddd;
+  color: #FFF;
   font-size: 14px;
   border-style: solid;
   border-width: 1px;
@@ -263,16 +281,32 @@
   opacity: 1;
   cursor: pointer;
 }
+/*    background: none repeat scroll 0 0 #2d4860;
+    border-bottom: 3px solid #618db6;
+    border-left: 3px solid #618db6;
+    border-top: 3px solid #618db6;
 
-.curGalReg,
+color: #6f8dac;
+ *
+ */
+.aegisToolbox-Section
+{
+  background: none repeat scroll 0 0 #618db6;
+  font-size: 12px;
+  padding-left: 12px;
+  cursor: pointer;
+  opacity: 1;
+}
+
 .aegisToolbox-label {
   color: deeppink;
   float: left;
-  margin-left: 0px;
+  margin-left: 3px;
   margin-top: 5px;
-  margin-right:10px;
+  margin-right:0px;
   font-size: 14px;
   padding-bottom: 3px;
+  display: inline;
 }
 .curGalReg,
 .aegisToolbox-text {
@@ -289,6 +323,17 @@
   color: cyan;
 }
 
+.seperator {
+  display: block;
+  height: 0px;
+}
+
+.hasLabel 
+{
+  float: right;
+  display: inline;
+}
+
 input.aegisLoc {
   background-color: #313131;
   border: 1px solid #3b3b3b;
@@ -299,9 +344,10 @@ input.aegisLoc {
   width: 8em;
   height: 1em;
   margin-left: 0px;
-  margin-right: 10px;
+  margin-right: 5px;
   margin-bottom: 5px;
-  padding: 2px 5px 2px 5px;
+  margin-top: 5px;
+  padding: 2px 2px 2px 2px;
 }
 
 .aegisToolbox-text {
@@ -322,5 +368,3 @@ input.aegisToolbox-text-set {
   float: left;
   color: red;
 }
-
-
