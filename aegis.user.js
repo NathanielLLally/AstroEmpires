@@ -12,7 +12,7 @@
 // @include     *.astroempires.com/*
 // @exclude     *.astroempires.com/login.aspx*
 // @exclude     *.astroempires.com/home.aspx
-// @version     1.2
+// @version     1.3
 // @grant       GM_xmlhttpRequest
 // @grant       GM_log
 // @grant       GM_setValue
@@ -31,7 +31,6 @@
  *
  *  ctx have a constructor?
  *  Context.prototype.has = function
- *
  */
 
 //boards ad
@@ -61,6 +60,9 @@ moment.prototype.formatDefault = function()
   return this.format("YYYY-MM-DD HH:mm:ss");
 }
 
+//  debugging function
+//
+//
 this.trace = {};
 function logTrace(msg) {
   var s = new Error().shortstack();
@@ -83,8 +85,7 @@ function logTrace(msg) {
   if (typeof msg === "string") {
     m = msg;
   }
-  m = " ["+m+"] line:";
-  console.log("> ",caller.fn, m, caller.line );
+  console.log("[",caller.fn, ":",caller.line,"] > ", m );
 }
 
 /* attempt at creating a tab */
@@ -503,7 +504,6 @@ function updateGalaxyRegion () {
 
 function myFleet(id)
 {
-  logTrace(id);
   return JSON.parse(GM_getValue("myfleet:"+id, {}));
 }
 
@@ -514,29 +514,102 @@ function myFleetAt(location)
 }
 function myFleetsTo(location)
 {
-  logTrace(location);
   var fleets = JSON.parse(GM_getValue("myfleets:to:"+location, "[]"));
-  logTrace(JSON.stringify(fleets));
+  logTrace(location + " " + JSON.stringify(fleets));
   return fleets;
 }
 
 
-function ctxMoveScout(ctx) {
-  moveScout(ctx.fromLoc, ctx.toLoc);
+this.ctxChainCmd = function(ctx, cmd)
+{
+  logTrace();
+  if (!tryAssertHas(cmd, {func: "string", ctx: "object"})) { return; };
+
+  var tag = 'ctxChain:'+getTabID() + ":",
+    chainID;
+  try {
+    assertHas(ctx, {chainID: "number"});
+    chainID = ctx.chainID;
+  } catch(e) {
+    chainID = GM_getValue(tag + "next", 0);
+    GM_setValue(tag + 'next', chainID + 1);
+    logTrace('new chain id:'+chainID);
+  }
+
+  var chain = JSON.parse(GM_getValue(tag + chainID, "[]"));
+  cmd.chainID = ctx.chainID;
+  chain.push(cmd);
+  console.log(cmd);
+  GM_setValue(tag + chainID, JSON.stringify(chain));
+
+  ctx.chainID = chainID;
+  return ctx;
 }
 
-function moveScout(fromLoc, toLoc)
+this.ctxChainNext = function(ctx)
 {
-  console.log('moveScout '+fromLoc + " to "+toLoc);
-  var data = {};
-  var fleet = myFleetAt(fromLoc);
+  logTrace();
+  tryAssertHas(ctx, {chainID: "number"});
+  var tag = 'ctxChain:'+getTabID() + ":";
+  var chain = JSON.parse(GM_getValue(tag + ctx.chainID, "[]"));
+
+  consoleMsg(tag + ctx.chainID);
+  chain.forEach(function(el, i, a) { 
+    consoleMsg("&nbsp;&nbsp;"+i+": "+el.func);
+  });
+  var cmd = chain.shift();
+  if (typeof cmd == "undefined") {
+    console.log("chain "+ctx.chainID +" over");
+    delete ctx.chainID;
+    return;
+  }
+  GM_setValue(tag + ctx.chainID, JSON.stringify(chain));
+
+  cmd.chainID = ctx.chainID;
+  console.log(cmd);
+  try {
+    ctxRunCmd(cmd);
+  } catch(e) {
+    console.log(e);
+  }
+}
+
+function moveScout(ctx)
+{
+  if (!tryAssertHas(ctx,{origin: "string", destination:"string"})) {return;}
+  logTrace();
+  ctx = ctxChainCmd(ctx,{func: 'scanRegion', ctx: {region: ctx.destination}});
+  ctx = ctxChainCmd(ctx,{func: 'ctxMoveScout', ctx: {origin: ctx.destination, destination: ctx.origin}});
+  ctx = ctxChainCmd(ctx,{func: 'scanRegion', ctx: {region: ctx.origin}});
+  ctx = ctxChainCmd(ctx,{func: 'ctxMoveScout', ctx: {origin: ctx.origin, destination: ctx.destination}});
+  logTrace();
+  ctxMoveScout(ctx);
+}
+
+this.ctxMoveScout = function(ctx)
+{
+  if (!tryAssertHas(ctx,{origin: "string", destination:"string"})) {return;}
+  logTrace();
+ 
+  var fleet = myFleetAt(ctx.origin);
   if (fleet != null) {
     logTrace();
-    data.destination = toLoc;
+
+    var data = {};
+    data.destination = ctx.destination;
     data['Scout Ship'] = 1;
-    sendMoveFleet({fleetID:fleet.id, data:data, origin:fromLoc, onarrive:"ctxReturnHome" }); 
+
+//    var ctx = {fleetID:fleet.id, data:data, origin:origin, onarrive:"ctxChainNext" };
+    ctx.fleetID = fleet.id;
+    ctx.data = data;
+    ctx.onarrive = 'ctxChainNext';
+    
+//    var cmdCtx = { func: 'ctxReturnHome', ctx: ctx };
+//    ctx = ctxChainCmd(ctx, cmdCtx);
+
+    sendMoveFleet(ctx);
   } else {
-    consoleMsg('no fleet @ '+fromLoc, "errMsg");
+    consoleMsg('no fleet @ '+origin, "errMsg");
   }
 }
 
@@ -593,12 +666,28 @@ this.ctxCheckFleet = function(ctx) {
   //
   try {
     assertHas(ctx, {onarrive: "string"});
-    consoleMsg('on arrival: '+ctx.onarrive);
     var callback = ctx.onarrive;
     delete ctx.onarrive;
     window.setTimeout( function() {
+      consoleMsg('on arrival: '+callback);
+logTrace();
+      var vctx = {};
+  vctx.url = serverURL+"/fleet.aspx";
+  vctx.msg =  "verifying arrival";
+  vctx.onload = "ctxLoadDispatch";
+  ctxQueueGet(vctx);
+logTrace();
+  if (!isSending()) {
+logTrace();
+    ctx.doneMsg = "fleet has arrived";
+    sendQueued(ctx);
+  }
+
+logTrace();
       aegis[callback](ctx);
-    }, (parseInt(fleetSent.arrival) + 6) * 1000);
+
+logTrace();
+    }, (parseInt(fleetSent.arrival) + 3) * 1000);
   } catch(e) {
     logTrace(e.message);
   }
@@ -678,6 +767,7 @@ this.sendMoveFleet = function(ctx)
     onload: function(response) {
       logTrace();
       ctx.html = response.responseText;
+
       ctx = ctxResponseDoc(ctx);
       var el = ctx.doc.getElementsByClassName("error");
       if (el != null && el.length > 0) {
@@ -880,7 +970,7 @@ function restoreToggle(id)
 {
   var value;
   value = GM_getValue("setting:hidden:"+id, 0);
-  logTrace(id + ":" +value);
+//  logTrace(id + ":" +value);
   if (value) {
     $("#"+id).hide();
   }
@@ -888,15 +978,14 @@ function restoreToggle(id)
 function restoreClass(id) 
 {
   value = GM_getValue("setting:class:"+id);
-  logTrace(id + ":" +value);
+//  logTrace(id + ":" +value);
   if (value != null) {
     $("#"+id).attr('class', value);
   }
 }
 
-      
 this.ConsoleToolbox = function() {
-  logTrace();
+//  logTrace();
   var $toolbox = $("#aegisConsole-Toolbox");
   if (! $toolbox.length) {
     $toolbox = $(document.createElement("div"))
@@ -941,7 +1030,7 @@ this.ConsoleToolbox = function() {
         var title = $('#curGalReg').html();
         if (typeof title === "string") {
           document.title = title + ' scan';
-          scanRegion(title);
+          scanRegion({region:title});
         } else {
           consoleMsg("no region selected!","errMsg");
         }
@@ -951,6 +1040,19 @@ this.ConsoleToolbox = function() {
     $( document.createElement('span') )
       .attr({id:'curGalReg'})
       .attr('class','curGalReg')
+      .appendTo($tbxScan);
+
+    $( document.createElement('span') )
+      .attr('class', 'aegisToolbox-button')
+      .html( 'Scan Base Regions')
+      .click( function() {
+        document.title = 'Scan Bases';
+        var locs = JSON.parse(GM_getValue('myBases',"[]"));
+        locs.forEach(function(el,i,a) {
+          scanRegion({region:el, skipSend: 1});
+        });
+        sendQueued({doneMsg: "completed scan of bases"});
+      })
       .appendTo($tbxScan);
 
   var $tbxFleet = tbxSection('Fleet Operations');
@@ -985,8 +1087,9 @@ this.ConsoleToolbox = function() {
       .attr('class','aegisToolbox-button wideRight')
       .html('     Move Scout      ')
       .click( function () { 
-        moveScout($('#moveScoutFrom').val(),
-          $('#moveScoutTo').val());
+        moveScout({origin: $('#moveScoutFrom').val(),
+          destination: $('#moveScoutTo').val()
+        });
       })
       .appendTo($tbxFleet);
     
@@ -1033,7 +1136,7 @@ this.ConsoleToolbox = function() {
 }
 
 this.ConsoleConsole = function() {
-  logTrace();
+//  logTrace();
   var $console = $("#aegisConsole");
   if (! $console.length) {
 //    var $hdr = tbxSection('Console');
@@ -1075,7 +1178,7 @@ this.ConsoleConsole = function() {
 this.makeConsole = function () {
   if (!document.location.href.match(/\/(.+?).astroempires.com/)) { return; }
 
-  logTrace();
+//  logTrace();
 
   var $hdr = $(document.createElement("div"))
     .attr({id: "aegisConsole-Header"})
@@ -1096,10 +1199,13 @@ this.makeConsole = function () {
       .append( ConsoleToolbox() )
       .prependTo('body');
 
+// persist classes
+//   hidden state
+//   inpute values
+
     restoreClass('aegisConsole');
     //$(".aegisToolbox").hide();
     $(".aegisToolbox").each(function(i) { 
-      console.log(i, $(this).attr('id'));
       restoreToggle($(this).attr('id'));
     });
     restoreToggle(ConsoleToolbox().attr('id'));
@@ -1766,7 +1872,10 @@ function parseFleet(aeData, url, doc) {
       if (td[5].getAttribute('sorttable_customkey').length > 0) {
         fleet.comment = td[5].getAttribute('sorttable_customkey');
       }
-      console.log(JSON.stringify(fleet));
+//      console.log(JSON.stringify(fleet));
+//
+//    store fleet information
+//
       GM_setValue("myfleet:"+ fleet.id, JSON.stringify(fleet));
 
       if (fleet.location != null) {
@@ -2196,6 +2305,7 @@ function parseEmpire(aeData, url, doc)
 
   var table = doc.getElementById('empire_events').getElementsByTagName('table')[0];
   var rows = table.getElementsByTagName('tr');
+  var locs = [];
   for (i = 0; i < rows.length; i++) {
     var cols = rows[i].getElementsByTagName('td');
     if (cols != null && cols.length > 0) {
@@ -2209,6 +2319,7 @@ function parseEmpire(aeData, url, doc)
       //save base locations for scan buttons
       //
       GM_setValue("myBase:"+baseRow['id'], baseRow['location']);
+      locs.push(baseRow['location']);
 
       baseRow['economy'] = fieldRightOfSlash(cols[2].textContent);
       //      baseRow['economy'] = cols[2].textContent;
@@ -2224,6 +2335,8 @@ function parseEmpire(aeData, url, doc)
       baseRow={};
     }
   }
+  GM_setValue("myBases", JSON.stringify(locs));
+
 }
 
 function parseGuild(aeData, url, doc)
@@ -2344,6 +2457,19 @@ function assert(ctx, types) {
   }
 }
  */
+
+//  helper
+//
+function tryAssertHas(ctx, types)
+{
+  try {
+    assertHas(ctx,types);
+    return 1;
+  } catch(e) {
+    console.log(e);
+    return 0;
+  }
+}
 
 function assertHas(ctx, types) {
   if (typeof (ctx) !== 'object') {
@@ -2527,6 +2653,11 @@ function sendQueued(ctx)
               document.title = ">" + document.title;
             }
           }
+
+          if (typeof ctx.chainID != "undefined") {
+            ctxChainNext(ctx);
+          }
+
         }
       }  
   });
@@ -2557,31 +2688,41 @@ this.ctxQueueGet = function(ctx)
 
 }
 
-this.scanRegion = function(region)
+this.scanRegion = function(ctx)
 {
-  var systems;
-  if (region != null && region.match(/[A-Za-z][0-9]{2}:[0-9]{2}/)) {
-    systems = GM_getValue("starMap:"+region);
-    if (!exists(systems)) {
-      var gal = region.match(/[A-Za-z][0-9]{2}/)[0];
-      getGalaxyXML({galaxy: gal, callback: (function(region) { 
-        return function() { scanRegion(region); }
-      })(region)
-      });
-      return;
-    }
-    consoleMsg("scanning region "+region,"infoMsg");
-  } else {
-    consoleMsg("invalid region! ["+region+"]","errMsg");
+  var region, systems;
+  try {
+    assertHas(ctx, {region: "string"});
+    region = ctx.region.match(/[A-Za-z][0-9]{2}:[0-9]{2}/)[0];
+  } catch(e) {
+    consoleMsg("invalid region!<br>"+e.message,"errMsg");
     return;
   }
+
+  systems = GM_getValue("starMap:"+region);
+
+  if (!exists(systems)) {
+    var gal = region.match(/[A-Za-z][0-9]{2}/)[0];
+    getGalaxyXML({galaxy: gal, callback: (function(region) { 
+      return function() { scanRegion({region: region}); }
+    })(region)
+    });
+    return;
+  }
+  consoleMsg("scanning region "+region,"infoMsg");
+  consoleMsg("chain: "+ctx.chainID)
+
   var system = systems.split(":");
   for (var i = 0; i < system.length; i++)
   {
     var loc = region + ":" + system[i];
     ctxQueueGet({url: "map.aspx?loc="+loc, msg: "scanning system "+loc});
   }
-  sendQueued({doneMsg: "completed scan of "+region});
+
+  if (typeof ctx.skipSend == "undefined") {
+    ctx.doneMsg = "completed scan of "+region;
+    sendQueued(ctx);
+  }
 
   //  unsafeWindow.starsJS.watch(0, function () {
   //  var mapDelay = setTimeout( listViewableStars, 2000);
@@ -2595,28 +2736,39 @@ function ctxResponseDoc(ctx)
   var htmlParse = new DOMParser();
 
   ctx.doc = htmlParse.parseFromString(ctx.html, 'text/html');
-  delete ctx.html;
+//  delete ctx.html;
 
   return ctx;
 }
 
 this.ctxLoadDispatch = function(ctx)
 {
-  logTrace(ctx.msg);
+  logTrace();
 
 //  console.log(JSON.stringify(ctx));
-//  $( 'html' ).prepend(ctx.doc);
+//  $( document.documentElement ).html(ctx.html);
+  $( 'body' ).html(ctx.html);
+
+  delete ctx.html;
+
+  makeConsole();
 
   ctxDispatchResponse(ctx);
 }
 
 this.ctxDispatchResponse = function(ctx)
 {
-  console.log('ctxDispatchResponse');
 
   try {
     assertHas(ctx, {doc: "object"});
-  } catch(e) { console.log(e); return; }
+  } catch(e) { 
+    try {
+      assertHas(ctx, {html: "string"});
+      ctx = ctxResponseDoc(ctx);
+    } catch(e) { 
+      throw new Error('ctxDispatchResponse passed no doc or html');
+    }
+  }
 
   ctx.follow = "all";
   dispatch(ctx);
@@ -2800,7 +2952,7 @@ function CurrentServerTime()
   var mCurrentServerTime = moment(mServerTime).add(localDiff);
   return mCurrentServerTime;
 }
-/*  ctx.command = ["name", context]
+/*  ctx.command = {func: "string", ctx: "object"}
  *  
  */
 this.ctxRunCmd = function(ctx)
@@ -2809,6 +2961,7 @@ this.ctxRunCmd = function(ctx)
   assertHas(ctx, {func: "string", ctx: "object"});
   var cmd = ctx.func;
   var cmdCtx = ctx.ctx;
+  cmdCtx.chainID = ctx.chainID;
 
   consoleMsg("processing command:<br>&nbsp;&nbsp;"+cmd + "("+ cmdCtx + ")");
 
@@ -2820,7 +2973,8 @@ this.ctxRunCmd = function(ctx)
 
   if (cmd == "ctxQueueGet" && (! (isSending()))) {
     console.log('sendqueued');
-    sendQueued({doneMsg: "done"});
+    ctx.doneMsg = "done";
+    sendQueued(ctx);
   }
 
 }
