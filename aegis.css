@@ -176,10 +176,12 @@
 
 .aegisConsole-Container {
   position: absolute;
+//  position: relative;
   top: 7px;
   left: 7px;
   width: 200px;
   z-index: 1;
+  cursor: move;
 //  z-index: 999999;
 }
 
@@ -210,17 +212,21 @@
 
 .aegisConsole-small,
 .aegisConsole {
+  background-color: #3c5268;
   color:  white;
   font-size: 10px;
   white-space: pre;
   left: 7px;
-  background-color: #3c5268;
   padding-left: 4px;
   width: 196px;
   height: 52em;
-  overflow-y: scroll;
   margin-bottom: 0px;
   padding-bottom: 0px;
+  overflow-y: scroll;
+  cursor:auto;
+}
+.aegisConsole-Content,
+{
 }
 
 .aegisConsole-small {
@@ -235,9 +241,8 @@
   color:  white;
   font-size: 10px;
   overflow-y: hidden;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
-
 
 .aegisConsole-Header {
   height: 20px;
@@ -246,6 +251,7 @@
   color: #EB7AE1;
   font-size: 12px;
   opacity: 0.95;
+  cursor: pointer;
 }
 
 .aegisConsole-Toolbox.span {

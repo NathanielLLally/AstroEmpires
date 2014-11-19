@@ -39,6 +39,7 @@ sub startup {
   $r->post('/ae/gis')->to(controller => 'store', action => 'dumpPostData');
   $r->post('/ae/gis/2')->to(controller => 'store', action => 'dumpPost');
   $r->post('/ae/gis/q')->to(controller => 'query', action => 'dispatchQuery');
+  $r->post('/ae/gis/log')->to(controller => 'store', action => 'log');
 }
 
 1;

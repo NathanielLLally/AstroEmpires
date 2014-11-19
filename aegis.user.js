@@ -4,12 +4,12 @@
 // @namespace   http://cirrus.airitechsecurity.com
 // @downloadURL http://cirrus.airitechsecurity.com/dev/js/aegis.user.js
 // @resource    aegis.css    http://cirrus.airitechsecurity.com/dev/css/aegis.css
-// @resource    jquery-ui.css    http://code.jquery.com/ui/1.11.2/themes/smoothness/jquery-ui.css
-// @require     http://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js
-// @require     http://ajax.googleapis.com/ajax/libs/jqueryui/1.11.2/jquery-ui.min.js
+// @require     http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js
+// @require     http://ajax.googleapis.com/ajax/libs/jqueryui/1.9.2/jquery-ui.min.js
 // @require     http://cirrus.airitechsecurity.com/js/moment.min.js
 // @require     http://cirrus.airitechsecurity.com/js/moment-duration-format.min.js
 // @include     *.astroempires.com/*
+// @exclude     *.astroempires.com/
 // @exclude     *.astroempires.com/login.aspx*
 // @exclude     *.astroempires.com/home.aspx
 // @version     1.3
@@ -27,12 +27,15 @@
 
 /* TODO:
  *
- *  sendToServer(ctx) for uniform ondispatch callbacks;
  *
- *  ctx have a constructor?
- *  Context.prototype.has = function
+ *
+ *  follow settings for empire -> base or empire -> system -> fleet
+ *    then put some minimum time on empire
+ *
+ * event system ideas
+ *   register 
+ *
  */
-
 //boards ad
 if (window.name == 'aswift_1') {
   return;
@@ -46,7 +49,7 @@ var mServerTime, mLocalStartTime;
 var aegisURL = "http://cirrus.airitechsecurity.com/ae/";
 var aegisURLstore = "gis/2.json";
 var aegisURLquery = "gis/q.json";
-var sendTimeout;
+var aegisURLlog = "gis/log.json";
 
 var ships = ['Fighters','Bombers','Heavy Bombers','Ion Bombers','Corvette','Recycler','Destroyer','Frigate','Ion Frigate','Scout Ship','Outpost Ship','Cruiser','Carrier','Heavy Cruiser','Battleship','Fleet Carrier','Dreadnought','Titan','Leviathan','Death Star'];
 
@@ -60,13 +63,35 @@ moment.prototype.formatDefault = function()
   return this.format("YYYY-MM-DD HH:mm:ss");
 }
 
+
+this.log = function()
+{
+  var args = Array.prototype.slice.call(arguments);
+  var line = [];
+  //build a string
+
+  args.forEach(function (el, i ,a) {
+    if (typeof el === "string") {
+      line.push(el);
+    } else if (typeof el === "array") {
+      line.push("[" + el.join(',') + "]");
+    } else if (typeof el === "object") {
+      line.push(JSON.stringify(el, null, '\t'));
+    }
+  });
+  ctxSendToServer({route: aegisURLlog,
+    data: {line: line.join('\n')}});
+}
+
 //  debugging function
-//
 //
 this.trace = {};
 function logTrace(msg) {
   var s = new Error().shortstack();
   s.shift(); //this
+  if (s[0].match(/^tryAssertHas/)) {
+    s.shift(); //tryAssertHas can be skipped also
+  }
   var caller = {
     trace: s.shift()
   };
@@ -82,7 +107,7 @@ function logTrace(msg) {
   }
 
   var m = aegis.trace[caller.fqn].marker;
-  if (typeof msg === "string") {
+  if (typeof msg !== "undefined") {
     m = msg;
   }
   console.log("[",caller.fn, ":",caller.line,"] > ", m );
@@ -165,7 +190,7 @@ function checkSendBufferCache()
       var postData = GM_getValue(key);
       var data = JSON.parse(postData);
       GM_deleteValue(key);
-      sendToServer(data, route, cbString);
+      ctxSendToServer({data:data, route:route, ondispatch:cbString});
     }
     /*
     if (key.match(/^setting:/)) {
@@ -192,7 +217,7 @@ function checkSend(hashKey)
     console.log(postData);
     var route = hashkey.match(/^sendBuffer:(.*?):/)[1];
     var cbString = hashkey.match(/^sendBuffer:(.*?):(.*?)/)[2];
-    sendToServer(data, route, cbString);
+    ctxSendToServer({data:data, route:route, ondispatch:cbString});
   }
 }
 
@@ -200,33 +225,41 @@ function checkSend(hashKey)
  *  within aegis object (set within buffer using GM_setValue)
  *
  */
-function sendToServer(data, Proute, cbString) {
-
-  var route = aegisURLstore;
-  if (Proute != null) {
-    route = Proute;
-  }
-  if (typeof data.time == "undefined") {
-    data.time = serverTime;
-  }
-  if (typeof data.server == "undefined") {
-    data.server = server;
-  }
-  if (typeof data.playerID == "undefined") {
-    data.playerID = playerID;
+this.ctxSendToServer = function(ctx) {
+  try {
+    assertHas(ctx, {data: "object"});
+  } catch(e) {
+    logTrace();
+    consoleMsg(e.message, "errMsg");
+    return;
   }
 
-  var hashKey = "sendBuffer:"+route+":"+cbString+":"+data['time'];
-  var postData = JSON.stringify(data);
-  console.log("posting to aegis server: "+route + " " + postData);
+  try {
+    assertHas(ctx, {route: "string"});
+  } catch(e) {
+    ctx.route = aegisURLstore;
+  }
+   
+  if (typeof ctx.data.time == "undefined") {
+    ctx.data.time = serverTime;
+  }
+  if (typeof ctx.data.server == "undefined") {
+    ctx.data.server = server;
+  }
+  if (typeof ctx.data.playerID == "undefined") {
+    ctx.data.playerID = playerID;
+  }
+
+  var hashKey = "sendBuffer:"+ctx.route+":"+ctx.onload+":"+ctx.data['time'];
+  var postData = JSON.stringify(ctx.data);
+  console.log("posting to aegis server: "+ctx.route + " " + postData);
   //  consoleMsg("sending to server");
 
   GM_setValue(hashKey, postData);
-  //  sendTimeout = setTimeout(function() { checkSend(hashKey); }, 10000);
 
   GM_xmlhttpRequest({
     method: "POST",
-    url: aegisURL + route,
+    url: aegisURL + ctx.route,
     data: postData,
     headers: {
       "Accept": "application/json",
@@ -246,9 +279,11 @@ function sendToServer(data, Proute, cbString) {
       GM_deleteValue(hashKey);
       var jsonResponse = JSON.parse(response.responseText);
       if (response.status == 200) {
-        if (cbString != null) {
+        if (ctx.ondispatch != null) {
+          var ondispatch = ctx.ondispatch;
+          delete ctx.ondispatch;
           try {
-            aegis[cbString](jsonResponse);
+            aegis[ondispatch](jsonResponse);
           } catch(e) {
             console.log(e);
           };
@@ -256,14 +291,13 @@ function sendToServer(data, Proute, cbString) {
 
           console.log("got json status from server: "+jsonResponse.response);
           if (typeof jsonResponse.response != "undefined") {
-            consoleMsg("server response: "+jsonResponse.response);
+      //      consoleMsg("server response: "+jsonResponse.response);
           }
         }
        
-        clearTimeout(sendTimeout);
       } else {
         console.log('server error');
-        consoleMsg("server error", "errMsg");
+        consoleMsg("server error<br>&nbsp;&nbsp;" + jsonResponse.response, "errMsg");
         //console.log(response.status);
       }
 
@@ -310,7 +344,7 @@ this.getGalaxyXML = function(context)
           });
           //console.log($stars.text);
         });
-        sendToServer(rs);
+        ctxSendToServer({data:rs});
 
         if (callback != null) {
           if (typeof callback == "string") {
@@ -522,10 +556,10 @@ function myFleetsTo(location)
 
 this.ctxChainCmd = function(ctx, cmd)
 {
-  logTrace();
+//  logTrace();
   if (!tryAssertHas(cmd, {func: "string", ctx: "object"})) { return; };
 
-  var tag = 'ctxChain:'+getTabID() + ":",
+  var tag = 'ctxChain:',
     chainID;
   try {
     assertHas(ctx, {chainID: "number"});
@@ -539,7 +573,8 @@ this.ctxChainCmd = function(ctx, cmd)
   var chain = JSON.parse(GM_getValue(tag + chainID, "[]"));
   cmd.chainID = ctx.chainID;
   chain.push(cmd);
-  console.log(cmd);
+//  console.log(tag + chainID, JSON.stringify(chain));
+
   GM_setValue(tag + chainID, JSON.stringify(chain));
 
   ctx.chainID = chainID;
@@ -550,10 +585,10 @@ this.ctxChainNext = function(ctx)
 {
   logTrace();
   tryAssertHas(ctx, {chainID: "number"});
-  var tag = 'ctxChain:'+getTabID() + ":";
+  var tag = 'ctxChain:';
   var chain = JSON.parse(GM_getValue(tag + ctx.chainID, "[]"));
 
-  consoleMsg(tag + ctx.chainID);
+  consoleMsg('doing next in chain '+tag + ctx.chainID);
   chain.forEach(function(el, i, a) { 
     consoleMsg("&nbsp;&nbsp;"+i+": "+el.func);
   });
@@ -574,15 +609,19 @@ this.ctxChainNext = function(ctx)
   }
 }
 
+//  the button
+//
 function moveScout(ctx)
 {
   if (!tryAssertHas(ctx,{origin: "string", destination:"string"})) {return;}
   logTrace();
   ctx = ctxChainCmd(ctx,{func: 'scanRegion', ctx: {region: ctx.destination}});
+  /*
   ctx = ctxChainCmd(ctx,{func: 'ctxMoveScout', ctx: {origin: ctx.destination, destination: ctx.origin}});
   ctx = ctxChainCmd(ctx,{func: 'scanRegion', ctx: {region: ctx.origin}});
   ctx = ctxChainCmd(ctx,{func: 'ctxMoveScout', ctx: {origin: ctx.origin, destination: ctx.destination}});
   logTrace();
+  */
   ctxMoveScout(ctx);
 }
 
@@ -660,7 +699,7 @@ this.ctxCheckFleet = function(ctx) {
   */
 
   ctx.fleetID = fleetSent.id;
-  consoleMsg(fleetSent.name + ' checked in' +'<br>&nbsp;&nbsp;bound for '+ctx.data.destination);
+  consoleMsg(fleetSent.name + ' checked in' +'<br>&nbsp;&nbsp;bound for '+ctx.destination);
 
   //  onarrival
   //
@@ -1010,8 +1049,12 @@ this.ConsoleToolbox = function() {
       .attr('class', 'aegisToolbox-Section')
       .html(txt)
       .click( function() {
-        $div.toggle();
-        GM_setValue('setting:hidden:'+id, $div.is(':hidden'));
+        if ($("#aegisConsole-Container").hasClass('noclick')) {
+          $("#aegisConsole-Container").removeClass('noclick');
+        } else {
+          $div.toggle();
+          GM_setValue('setting:hidden:'+id, $div.is(':hidden'));
+        }
       })
       .appendTo($toolbox);
 
@@ -1021,6 +1064,17 @@ this.ConsoleToolbox = function() {
   }
 
   var $tbxScan = tbxSection('Scan');
+
+    $( document.createElement('span') )
+      .attr({id:'btnSendQCancel', class: 'aegisToolbox-button'})
+      .html( '   Cancel   ' )
+      .click( function() {
+        sendQ.clear();
+        $( this ).hide();
+        consoleMsg('cancelled', 'infoMsg');
+      })
+    .hide()
+      .appendTo( $tbxScan );
 
 //  Scan region
     $( document.createElement('span') )
@@ -1052,6 +1106,15 @@ this.ConsoleToolbox = function() {
           scanRegion({region:el, skipSend: 1});
         });
         sendQueued({doneMsg: "completed scan of bases"});
+
+        $( document.createElement('span') )
+          .attr({id:'btnCancel', class: 'aegisToolbox-button'})
+          .html( ' Cancel ' )
+          .click( function() {
+            sendQ.clear();
+            $( this ).remove();
+          })
+        .insertAfter( $( this ) );
       })
       .appendTo($tbxScan);
 
@@ -1128,9 +1191,20 @@ this.ConsoleToolbox = function() {
       })
       .appendTo($tbxFleet);
 
-  var $tbxConsole = tbxSection('Console');
-    $tbxConsole.append(ConsoleConsole());
+    $( document.createElement('span') )
+      .attr('id','btnDoIt')
+      .attr('class','aegisToolbox-button wideRight')
+      .html('     Do It      ')
+      .click( function () {
+        aegis['doit']();
+      }).appendTo( tbxSection('Devel') );
 
+     var $tbxConsole = tbxSection('Console');
+    ConsoleConsole().appendTo( $tbxConsole );
+        $tbxConsole.resizable();
+//    ConsoleConsole().appendTo( tbxSection('Console') );
+
+    
   }
   return $toolbox;
 }
@@ -1143,40 +1217,63 @@ this.ConsoleConsole = function() {
 
     $console = $(document.createElement("div"))
       .attr({id: "aegisConsole", class: 'aegisConsole'})
-      .click( function() {
-        var $el = $("#aegisConsole");
-        var m = $el.attr('class').match(/^(.*?)(-small)?$/);
-        if (typeof m[2] === "string") {
-          $el.attr('class', m[1]);
-        } else if (typeof m[1] === "string") {
-          $el.attr('class', m[1] + '-small');
+      .mousedown( function(e) {
+        $(this).data("downPos", {x:e.pageX, y:e.pageY});
+      })
+      .mouseup(function(e) {
+        var downPos = $(this).data().downPos;
+        $(this).removeData("downPos");
+        if (downPos.x == e.pageX && downPos.y == e.pageY) {
+          consoleClear();
+        /*
+          // toggle console size
+          var $el = $("#aegisConsole");
+          var m = $el.attr('class').match(/^(.*?)(-small)?$/);
+          if (typeof m[2] === "string") {
+            $el.attr('class', m[1]);
+          } else if (typeof m[1] === "string") {
+            $el.attr('class', m[1] + '-small');
+          }
+          GM_setValue("setting:class:aegisConsole", $el.attr('class'));
+          */
         }
-        GM_setValue("setting:class:aegisConsole", $el.attr('class'));
       })
       .html( GM_getValue('aegisConsole:'+getTabID(),
-            "tabID: "+getTabID()) );
+            "tabID: "+getTabID()) )
+        /*
+    $(document.createElement("div"))
+      .attr({id: "aegisConsole-Content", class: 'aegisConsole-Content'})
+      .appendTo($console);
+      */
   }
   return $console;
 
 }
 
-  this.consoleMsg = function(msg, level)
-  {
+this.consoleClear = function() {
+  $("#aegisConsole").html('');
+  GM_setValue('aegisConsole:'+getTabID(), '');
+}
+
+this.consoleMsg = function(msg, level)
+{
+  if (typeof(msg) !== "undefined") {
+    console.log("[Console] >",msg);
     if (typeof(level) == "string") {
       msg = "<span class='"+level+"'>"+msg+"</span>";
     }
 
-    if (typeof(msg) == "string") {
-//      msg = msg + "<br>" + $console.html();
-      $("#aegisConsole").prepend(msg + "<br>");
-      GM_setValue('aegisConsole:'+getTabID(), $("#aegisConsole").html());
-    } else {
-      console.log('consolMsg: '+typeof(msg));
-    }
+    //      msg = msg + "<br>" + $console.html();
+    $("#aegisConsole").prepend(msg + "<br>");
+    GM_setValue('aegisConsole:'+getTabID(), $("#aegisConsole").html());
+  } else {
+    console.log('consolMsg: '+typeof(msg));
   }
+}
 
 this.makeConsole = function () {
   if (!document.location.href.match(/\/(.+?).astroempires.com/)) { return; }
+  logTrace();
 
 //  logTrace();
 
@@ -1185,12 +1282,17 @@ this.makeConsole = function () {
     .attr("class", "aegisConsole-Header")
     .html("<b id='aegis-tag'>aegis v"+version+"</b>")
     .click(function() {
-      var $tbx = ConsoleToolbox();
-      $tbx.toggle();
-      GM_setValue('setting:hidden:'+ $tbx.attr('id'), $tbx.is(':hidden'));
+      if ($("#aegisConsole-Container").hasClass('noclick')) {
+        $("#aegisConsole-Container").removeClass('noclick');
+      } else {
+        var $tbx = ConsoleToolbox();
+        $tbx.toggle();
+        GM_setValue('setting:hidden:'+ $tbx.attr('id'), $tbx.is(':hidden'));
+      }
     });
 
   var $container = $("#aegisConsole-Container");
+    $container.resizable();
   if ($container.length == 0) {
     $container = $(document.createElement("div"))
       .attr({id:"aegisConsole-Container"})
@@ -1199,9 +1301,21 @@ this.makeConsole = function () {
       .append( ConsoleToolbox() )
       .prependTo('body');
 
+    $container.draggable({
+        cancel: "#aegisConsole, input, span",
+        start: function(event, ui) {
+          $(this).addClass('noclick');
+        },
+        stop: function(event, ui) {
+          GM_setValue("setting:top", $(this).position().top);
+          GM_setValue("setting:left", $(this).position().left);
+        }
+    });
+
 // persist classes
 //   hidden state
 //   inpute values
+//   position
 
     restoreClass('aegisConsole');
     //$(".aegisToolbox").hide();
@@ -1217,6 +1331,9 @@ this.makeConsole = function () {
         $( "#"+id ).val(val);
       }
     });
+
+    $container.css('top', GM_getValue("setting:top", 7));
+    $container.css('left', GM_getValue("setting:left", 7));
   }
 
   /*
@@ -1693,6 +1810,8 @@ function xml2string(node) {
   }
 }
 
+/********************************* ae data parsing functions *****/
+
 function matchFirstPos(string, re)
 {
   if (string == null || re == null) {
@@ -1739,22 +1858,42 @@ function fieldPlayerFromLink(aeData, link)
   }
 }
 
-function parseMapFleet(aeData, table, location, follow) {
-  if (location != null) {
-    consoleMsg('parseMapFleet '+location);
+function checkDaysOld(ctx)
+{
+  if (!tryAssertHas(ctx, {doc: "object", data: "object"})) { return; };
+  var daysOld = null;
+  var center = ctx.doc.getElementsByTagName('center');
+  for (i = 0; i < center.length; i++) {
+    //console.log(center[i].textContent)
+    if (center[i].textContent.match(/Recorded data from (\d+)/)) {
+      daysOld = center[i].textContent.match(/Recorded data from (\d+)/)[1];
+      ctx.data.daysOld = daysOld;
+    }
+  }
+  return daysOld;
+}
+
+
+//function parseMapFleet(aeData, table, location, follow) {
+function parseMapFleet(ctx) {
+  if (!tryAssertHas(ctx, {data: "object",  
+    table: "object", follow: "string"})) { return; }
+ 
+  if (ctx.location) {
+    consoleMsg('parseMapFleet '+ctx.location);
   }
 
 //  console.log(xml2string(table));
 
-  var tr = table.getElementsByTagName('tr');
+  var tr = ctx.table.getElementsByTagName('tr');
 
-  //aeData['fleet'] = [];
+  //ctx.data['fleet'] = [];
   //console.log(tr.length);
 
   for(r=0; r<tr.length; r++){
     var dtRow = {};
 
-    dtRow['location'] = location;
+    dtRow['location'] = ctx.location;
 
     var tds = tr[r].getElementsByTagName('td');
     if (tds != null && tds.length >= 4){
@@ -1766,10 +1905,10 @@ function parseMapFleet(aeData, table, location, follow) {
       }
       var a = tds[i++].getElementsByTagName('a');
       if (a != null && a.length > 0) {
-        dtRow['owner'] = fieldPlayerFromLink(aeData, a[0]);
+        dtRow['owner'] = fieldPlayerFromLink(ctx.data, a[0]);
       }
 
-      if (location == null) {
+      if (ctx.location == null) {
         var sortKey = tds[i++].getAttribute("sorttable_customkey");
         if (sortKey != null) {
           dtRow['location'] = sortKey;
@@ -1789,43 +1928,51 @@ function parseMapFleet(aeData, table, location, follow) {
     }
 
     if (Object.keys(dtRow).length > 0 && dtRow['id'] != null) {
-      if (follow) {
+      if (ctx.follow == "fleet" || ctx.follow == "all") {
         ctxQueueGet({url: "fleet.aspx?fleet="+dtRow['id'],
           msg: "scanning fleet "+dtRow['id']});
       }
 
-      aeData.add('fleet',dtRow);
+      ctx.data.add('fleet',dtRow);
     }
   }
 }
 
-function parseScanner(aeData, url, doc, follow){
+function parseScanner(ctx){
+  if (!tryAssertHas(ctx, 
+        {data: "object", doc: "object", url: "string", follow: "string"})
+     ) { return; }
 
   consoleMsg('parseScanner');
-  //console.log(xml2string(document.getElementById('coded_scanners')));
-  var table = doc.getElementById('coded_scanners');
+  //console.log(xml2string(ctx.document.getElementById('coded_scanners')));
+  var table = ctx.doc.getElementById('coded_scanners');
   if (table == null) {
-    table = doc.getElementById('empire_scanners');
+    table = ctx.doc.getElementById('empire_scanners');
     if (table != null) {
       table = table.getElementsByTagName('table')[0];
     }
   }
-  parseMapFleet(aeData, table, null, follow);
+  ctx.table = table;
+  parseMapFleet(ctx);
 
-  console.log(JSON.stringify(aeData));
+  console.log(JSON.stringify(ctx.data));
 }
 
 
-function parseFleet(aeData, url, doc) {
+function parseFleet(ctx) {
+  if (!tryAssertHas(ctx, 
+        {data: "object", doc:"object", url: "string", follow: "string"})
+     ) { return; }
+
   var dtRow = {};
-  if (url.match(/fleet.aspx\?fleet=(\d+)&view=move/)) {
+  if (ctx.url.match(/fleet.aspx\?fleet=(\d+)&view=move/)) {
     return;
   }
-  if (url.match(/fleet.aspx\?fleet=(\d+)/)) {
-    dtRow['id'] = url.match(/fleet.aspx\?fleet=(\d+)/)[1];
+  if (ctx.url.match(/fleet.aspx\?fleet=(\d+)/)) {
+    dtRow['id'] = ctx.url.match(/fleet.aspx\?fleet=(\d+)/)[1];
     consoleMsg('parseFleet '+ dtRow['id'] );
   } else {
-    var table = doc.getElementById('fleets-list');
+    var table = ctx.doc.getElementById('fleets-list');
     if (table == null) { return; }
     var tr = table.getElementsByTagName('tbody')[1].getElementsByTagName('tr');
     if (tr == null) { return; }
@@ -1894,7 +2041,7 @@ function parseFleet(aeData, url, doc) {
     return;
   }
 
-  var tables = doc.getElementsByTagName('table');
+  var tables = ctx.doc.getElementsByTagName('table');
   var playerAndLoc;
   for (i=0; i<tables.length; i++) {
     if (tables[i].id == "fleet_overview") {
@@ -1915,7 +2062,7 @@ function parseFleet(aeData, url, doc) {
     if (cols != null && cols.length >= 4) {
       var link = cols[0].getElementsByTagName('a');
       if (link != null && link.length > 0) {
-        dtRow['owner'] = fieldPlayerFromLink(aeData, link[0]);
+        dtRow['owner'] = fieldPlayerFromLink(ctx.data, link[0]);
       }
       link = cols[1].getElementsByTagName('a');
       if (link != null && link.length > 0) {
@@ -1935,9 +2082,9 @@ function parseFleet(aeData, url, doc) {
     }
   }
 
-  //console.log(xml2string(document.getElementById('fleet_overview')));
+  //console.log(xml2string(ctx.document.getElementById('fleet_overview')));
 
-  var fleetTable = doc.getElementById('fleet_overview').getElementsByTagName('table')[0];
+  var fleetTable = ctx.doc.getElementById('fleet_overview').getElementsByTagName('table')[0];
   var tr = fleetTable.getElementsByTagName('tr');
   var ships = {};
   for(r=0; r<tr.length; r++){
@@ -1950,28 +2097,36 @@ function parseFleet(aeData, url, doc) {
     dtRow['ships'] = ships;
   }
 
-  var fleetSize = doc.getElementById('fleet_overview').getElementsByTagName('center')[0].textContent;
+  var fleetSize = ctx.doc.getElementById('fleet_overview').getElementsByTagName('center')[0].textContent;
   dtRow['size'] = fleetSize.match(/(\d+)/g).join("");
 
 
-  aeData.add('fleet',dtRow);
+  ctx.data.add('fleet',dtRow);
 }
 
-function parseAstro(aeData, url, doc, follow) {
+function parseAstro(ctx) {
+  var location;
+  try {
+    assertHas(ctx, 
+        {data: "object", doc:"object", url: "string", follow: "string"});
 
-  var location = url.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
-  consoleMsg('parseAstro '+location);
-  console.log('parseAstro');
+    location = ctx.url.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)[0];
 
+    consoleMsg('parseAstro '+location);
+  } catch(e) {
+    console.log(e);
+    return;
+  }
   var aRow = {};
-  var el = doc.getElementsByClassName('astro')[0];
+
+  var el = ctx.doc.getElementsByClassName('astro')[0];
 
   console.log(el.textContent);
   aRow['type'] = el.textContent.match(/(Astro Type: (.*?)Terrain)/)[2];
   aRow['terrain'] = el.textContent.match(/(Terrain: (.*?)Area)/)[2];
   aRow['location'] = location;
 
-  var table = doc.getElementById('map_base');    
+  var table = ctx.doc.getElementById('map_base');    
   var dtRow = {};
   if (table !== null) {
 
@@ -1991,11 +2146,11 @@ function parseAstro(aeData, url, doc, follow) {
         dtRow['location'] = location;
 
         link = col[i++].getElementsByTagName('a')[0];
-        dtRow['owner'] = fieldPlayerFromLink(aeData, link);
+        dtRow['owner'] = fieldPlayerFromLink(ctx.data, link);
 
         link = col[i++].getElementsByTagName('a')[0];
         if (link != null) {
-          dtRow['occupier'] = fieldPlayerFromLink(aeData, link);
+          dtRow['occupier'] = fieldPlayerFromLink(ctx.data, link);
         }
 
         link = col[i].getElementsByTagName('a')[0];
@@ -2005,43 +2160,38 @@ function parseAstro(aeData, url, doc, follow) {
 
     }
 
-    aeData.add('base',dtRow);
+    ctx.data.add('base',dtRow);
   }
-  aeData.add('astro',aRow);
+  ctx.data.add('astro',aRow);
 
-  var mapfleet = doc.getElementById('map_fleets');
+  var mapfleet = ctx.doc.getElementById('map_fleets');
   if (mapfleet != null) {
-    parseMapFleet(aeData, mapfleet.getElementsByTagName('table')[0], location, follow);    
+    ctx.table = mapfleet.getElementsByTagName('table')[0];
+    ctx.location = location;
+    parseMapFleet(ctx);
   }
 }
 
-function checkDaysOld(aeData, doc)
-{
-  var daysOld = null;
-  var center = doc.getElementsByTagName('center');
-  for (i = 0; i < center.length; i++) {
-    //console.log(center[i].textContent)
-    if (center[i].textContent.match(/Recorded data from (\d+)/)) {
-      daysOld = center[i].textContent.match(/Recorded data from (\d+)/)[1];
-      aeData.daysOld = daysOld;
-    }
-  }
-  return daysOld;
-}
+function parseSystem(ctx) {
+  var system;
+  try {
+    assertHas(ctx, 
+        {data: "object", doc:"object", url: "string", follow: "string"});
 
-function parseSystem(aeData, url, doc, follow) {
-  var system = url.match(/[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}/);
-  if (!system) {
+    system = ctx.url.match(/([A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2})/)[1];
+
+    consoleMsg('parseSystem '+system);
+  } catch(e) {
+    console.log(e);
     return;
   }
-  consoleMsg('parseSystem '+system[0]);
   var astroRow = {};
   var baseRow = {};
   var fleetRow = {};
 
-  var daysOld = checkDaysOld(aeData, doc);
+  var daysOld = checkDaysOld(ctx);
 
-  var table = doc.getElementsByClassName('system')[0];
+  var table = ctx.doc.getElementsByClassName('system')[0];
   //  console.log(xml2string(table));
 
   var links = table.getElementsByTagName('a');
@@ -2084,7 +2234,7 @@ function parseSystem(aeData, url, doc, follow) {
           baseRow['location'] = astroRow['location'] ;
           astroRow['base'] = baseRow['id'];
 
-          if (follow) {
+          if (ctx.follow == "base" || ctx.follow == "all") {
             ctxQueueGet({url: link.href, msg: "found base at "+astroRow['location']});
           }
         }
@@ -2099,7 +2249,7 @@ function parseSystem(aeData, url, doc, follow) {
             var div =  next.getElementsByTagName('div');
             if (a != null && a.length > 0) {
 
-              var player = fieldPlayerFromLink(aeData, a[0]);
+              var player = fieldPlayerFromLink(ctx.data, a[0]);
 
               if (baseRow['owner'] != null) {
                 baseRow['occupier'] = player;
@@ -2118,42 +2268,54 @@ function parseSystem(aeData, url, doc, follow) {
                       astroRow['unknownIncoming'] = nfo[2].match(/\d+/g).join("");
 
                       //follow the fleet unless already following because of base
-                      if (follow && baseRow['id'] == null) {
-                        ctxQueueGet({url: "map.aspx?loc="+astroRow['location'],
-                            msg: "found fleet at "+astroRow['location']});
+                      //
+                      if (baseRow['id'] == null || ctx.follow != "base") {
+                        if (ctx.follow == "fleet" || ctx.follow == "all") {
+                          ctxQueueGet({url: "map.aspx?loc="+astroRow['location'],
+                              msg: "found fleet at "+astroRow['location']});
+                        }
                       }
                     }
                   }
                 }
               }
-              //               console.log(JSON.stringify(aeData));
+              //               console.log(JSON.stringify(ctx.data));
 
             }
           }
         }
         if (Object.keys(baseRow).length > 0 &&
             baseRow['id'] != null && baseRow['owner'] != null) {
-              aeData.add('base',baseRow);
+              ctx.data.add('base',baseRow);
               baseRow = {};
             }
-        aeData.add('astro',astroRow);
+        ctx.data.add('astro',astroRow);
         astroRow = {};
       }
     }
   }
 }
 
-function parseBase(aeData, url, doc, follow) {
+function parseBase(ctx) {
+  var baseRow = {};
+  try {
+    assertHas(ctx, 
+        {data: "object", doc: "object", url: "string", follow: "string"});
 
-  if (! url.match(/base\.aspx\?base=(\d+)(&view=)?$/)) {
+    if (! ctx.url.match(/base\.aspx\?base=(\d+)(&view=)?$/)) {
+      return;
+    }
+
+    baseRow['id'] = ctx.url.match(/base\.aspx\?base=(\d+)/)[1];
+    consoleMsg('parseBase '+ baseRow['id']);
+  } catch(e) {
+    logTrace();
+    console.log(e);
     return;
   }
 
-  var baseRow = {};
-  baseRow['id'] = matchFirstPos(url, /base\.aspx\?base=(\d+)/);
-  consoleMsg('parseBase '+ baseRow['id']);
 
-  var tables = doc.getElementsByTagName('table');
+  var tables = ctx.doc.getElementsByTagName('table');
   if (tables != null && tables.length > 0) {
     for (i = 0; i < tables.length; i++) {
       var table = tables[i];
@@ -2177,8 +2339,6 @@ function parseBase(aeData, url, doc, follow) {
           if (op != null && op.length > 0) {
             var o = op[0];
             for (var i = 0; o != null; o = op[++i]) {
-              console.log(o.getAttribute("selected"));
-              console.log(o.innerHTML + "|" + o.textContent);
               if (o.getAttribute("selected") == "selected") {
                 baseRow['name'] = o.textContent.match(/^\s?((\S+\s?)+\S+)\s?$/)[1];
               }
@@ -2196,7 +2356,6 @@ function parseBase(aeData, url, doc, follow) {
           } else {
             //others base
             for (ih = 0; ih < colsTH.length; ih++) {
-              console.log(colsTH[ih].textContent  + " = " + colsTD[ih].textContent);
               var key = colsTH[ih].textContent;
               if (key == "Base Name") {
                 baseRow['name'] = colsTD[ih].textContent.match(/^\s?((\S+\s?)+\S?)\s?$/)[0];
@@ -2211,7 +2370,7 @@ function parseBase(aeData, url, doc, follow) {
       }
     }
   }
-  var tblCap = doc.getElementById('base_processing-capacities').getElementsByTagName('table')[0];
+  var tblCap = ctx.doc.getElementById('base_processing-capacities').getElementsByTagName('table')[0];
   //console.log(xml2string(tblCap));
 
   var trs = tblCap.getElementsByTagName('tr');
@@ -2222,7 +2381,7 @@ function parseBase(aeData, url, doc, follow) {
       if (tds[0].textContent == "Base Owner") {
         var a = tds[1].getElementsByTagName('a');
         if (a != null && a.length > 0) {
-          baseRow['owner'] = fieldPlayerFromLink(aeData,a[0]);
+          baseRow['owner'] = fieldPlayerFromLink(ctx.data,a[0]);
         }
       } else if (tds[0].textContent == "Economy") {
         baseRow['economy'] = tds[1].textContent;
@@ -2234,19 +2393,25 @@ function parseBase(aeData, url, doc, follow) {
     }
   }
 
-  var baseFleets = doc.getElementById('base_fleets');
+  // fleets
+  //
+  var baseFleets = ctx.doc.getElementById('base_fleets');
   if (baseFleets != null) {
-    console.log('has base_fleets');
     var tblFleets = baseFleets.getElementsByTagName('table');
     if (tblFleets != null && tblFleets.length > 0) {
-      parseMapFleet(aeData, tblFleets[0], baseRow['location'], follow);
+
+      ctx.table = tblFleets[0];
+      ctx.location = baseRow['location'];
+      parseMapFleet(ctx);
     }
   }
 
-  var tblStru = doc.getElementById('base_resume-structures');
+  var tblStru = ctx.doc.getElementById('base_resume-structures');
   if (tblStru != null) { 
     tblStru = tblStru.getElementsByTagName('table')[0];
   }
+
+  //structures
 
   if (tblStru != null) { 
     //  console.log(xml2string(tblStru));
@@ -2272,10 +2437,12 @@ function parseBase(aeData, url, doc, follow) {
         var ccJgVal = tds[3];
         if (ccJgVal != null && ccJgVal.textContent.match(/\d/)) {
           //console.log( ccJgVal.innerHTML);
-          var vals = ccJgVal.innerHTML.match(/(\d+)</g);
-          struct['Command Centers'] = vals[0].match(/\d+/)[0];
-          if (vals.length > 1) {
-            struct['Jump Gate'] = vals[1].match(/\d+/)[0];
+          var name = ccJg.innerHTML.split("<br>");
+          var vals = ccJgVal.innerHTML.split("<br>");
+          for (j = 0; j < name.length; j++) {
+            if (name[j] != null && vals[j] != null && name[j].length > 0) {
+              struct[name[j]] = vals[j];
+            }
           }
         }
         var def = tds[4];
@@ -2295,15 +2462,15 @@ function parseBase(aeData, url, doc, follow) {
       }
     }
   }
-  aeData.add('base',baseRow);
+  ctx.data.add('base',baseRow);
 }
 
-function parseEmpire(aeData, url, doc)
+function parseEmpire(ctx)
 {
   consoleMsg('parseEmpire player '+playerID);
   var baseRow = {};
 
-  var table = doc.getElementById('empire_events').getElementsByTagName('table')[0];
+  var table = ctx.doc.getElementById('empire_events').getElementsByTagName('table')[0];
   var rows = table.getElementsByTagName('tr');
   var locs = [];
   for (i = 0; i < rows.length; i++) {
@@ -2328,10 +2495,10 @@ function parseEmpire(aeData, url, doc)
       a = cols[3].getElementsByTagName('a')[0];
       var occ = a.href.match(/player=(\d+)/)[1];
       if (occ > 0) {
-        baseRow['occupier'] = fieldPlayerFromLink(aeData, a);
+        baseRow['occupier'] = fieldPlayerFromLink(ctx.data, a);
       }
 
-      aeData.add('base',baseRow);
+      ctx.data.add('base',baseRow);
       baseRow={};
     }
   }
@@ -2339,15 +2506,15 @@ function parseEmpire(aeData, url, doc)
 
 }
 
-function parseGuild(aeData, url, doc)
+function parseGuild(ctx)
 {
   consoleMsg('parseGuild player '+playerID);
-  if (url.match(/\?guild=(\d+)/)) {
+  if (ctx.url.match(/\?guild=(\d+)/)) {
   }
   var playerRow = {};
   var guild = {};
   //guild
-  var table=doc.getElementById('profile_show').getElementsByTagName('table')[0];
+  var table=ctx.doc.getElementById('profile_show').getElementsByTagName('table')[0];
   var rows = table.getElementsByTagName('tr');
   if (rows != null && rows.length > 0) {
     guild['name'] = rows[0].textContent.match(/^\s?((\S+\s?)+\S+)\s?$/)[1];
@@ -2360,7 +2527,7 @@ function parseGuild(aeData, url, doc)
 
 
   //members
-  var table=doc.getElementById('guild_members').getElementsByTagName('table')[0];
+  var table=ctx.doc.getElementById('guild_members').getElementsByTagName('table')[0];
   var row;
   var rows = table.getElementsByTagName('tr');
   for (var i=0, row=null; row=rows[i]; i++) {
@@ -2377,7 +2544,7 @@ function parseGuild(aeData, url, doc)
       }
       playerRow['guild'] = guild;
     }
-    aeData.add('player',playerRow);
+    ctx.data.add('player',playerRow);
     playerRow = {};
   }
 }
@@ -2460,13 +2627,15 @@ function assert(ctx, types) {
 
 //  helper
 //
-function tryAssertHas(ctx, types)
+function tryAssertHas(ctx, types, skip)
 {
   try {
     assertHas(ctx,types);
     return 1;
   } catch(e) {
-    console.log(e);
+    if (typeof skip === "undefined") {
+      logTrace(e);
+    }
     return 0;
   }
 }
@@ -2499,10 +2668,10 @@ var sendQ = {
       */
     GM_setValue(tag +':ctx:'+tail, JSON.stringify(ctx))
 
-    console.log("set "+tag +':'+tail);
+//    console.log("set "+tag +':'+tail);
 
     GM_setValue(tag+':tail',++tail);
-    console.log("new tail "+ GM_getValue(tag+':tail',0));
+//    console.log("new tail "+ GM_getValue(tag+':tail',0));
   },
   shift: function() {
     var tag = 'sendQ:'+ getTabID();
@@ -2511,7 +2680,7 @@ var sendQ = {
 
     var ctx = JSON.parse(GM_getValue(tag +':ctx:'+head, ''));
 
-    console.log('head '+head+ ' url '+ctx.url);
+//    console.log('head '+head+ ' url '+ctx.url);
 
     try {
       assertHas(ctx, {url: "string", msg: "string"});
@@ -2527,7 +2696,7 @@ var sendQ = {
       GM_setValue(tag+':tail',0);
       GM_setValue(tag+':head',0);
     }
-    console.log('new head '+head + ', tail '+tail);
+//    console.log('new head '+head + ', tail '+tail);
     return ctx;
   },
   clear: function() {
@@ -2539,6 +2708,8 @@ var sendQ = {
     }
     GM_setValue(tag+':tail',0);
     GM_setValue(tag+':head',0);
+
+    GM_deleteValue(tag+':waitFor');
 
   },
   length: function () {
@@ -2584,6 +2755,13 @@ function sendQueued(ctx)
     console.log('sendQ called prematurely urls:'+sendQ.length());
     return;
   }
+
+//  if (!isSending()) {
+    //  nice to have a cancel button
+    //
+      $( '#btnSendQCancel' ).show();
+//  }
+
   //set a wait time in the future
   var min = 500, max = 3000;
   var waitMS = Math.floor(Math.random() * (max - min)) + min;
@@ -2643,6 +2821,8 @@ function sendQueued(ctx)
           alarm = window.setTimeout( function() { sendQueued(ctx); }, waitMS);
 
         } else {
+          $('#btnSendQCancel').remove();
+
           GM_deleteValue(tag+':waitFor');
 
           if (!ctx.doneMsg) {
@@ -2710,6 +2890,7 @@ this.scanRegion = function(ctx)
     return;
   }
   consoleMsg("scanning region "+region,"infoMsg");
+
   consoleMsg("chain: "+ctx.chainID)
 
   var system = systems.split(":");
@@ -2746,12 +2927,12 @@ this.ctxLoadDispatch = function(ctx)
   logTrace();
 
 //  console.log(JSON.stringify(ctx));
-//  $( document.documentElement ).html(ctx.html);
-  $( 'body' ).html(ctx.html);
+//  document.documentElement = ctx.doc;
+//  $( 'body' ).html(ctx.html);
 
   delete ctx.html;
 
-  makeConsole();
+//  makeConsole();
 
   ctxDispatchResponse(ctx);
 }
@@ -2770,7 +2951,11 @@ this.ctxDispatchResponse = function(ctx)
     }
   }
 
-  ctx.follow = "all";
+  //  don't override
+  //
+  if (typeof ctx.follow === "undefined") {
+    ctx.follow = "all";
+  }
   dispatch(ctx);
 
 }
@@ -2795,21 +2980,13 @@ function dispatch(ctx) {
     assertHas(ctx, {url: "string", doc: "object"});
   } catch(e) { console.log(e); return; }
 
-  var url = decodeURIComponent(ctx.url),
-      doc = ctx.doc,
-      follow;
-  if (typeof ctx.follow != "undefined") {
-    follow = 1;
-  }
+  ctx.url = decodeURIComponent(ctx.url);
+  ctx.route = aegisURLstore;
+  ctx.follow = "none";
 
-  console.log('dispatching '+url );
-  if (url.match(/(.+?)astroempires.com/)) {
-
-    server = url.match(/\/(.+?).astroempires.com/)[1];
-    server = server.replace(/\//, '');
-    serverURL = 'http://' + server + '.astroempires.com';
-    playerID = doc.getElementById('account').parentNode.getElementsByTagName("th")[1].innerHTML;
-    serverTime = doc.getElementById('server-time').getAttribute('title');
+  console.log('dispatching '+ctx.url );
+  if (ctx.url.match(/(.+?)astroempires.com/)) {
+    serverTime = ctx.doc.getElementById('server-time').getAttribute('title');
 
     console.log('dispatch server '+server+' playerID '+playerID + ' time '+serverTime);
     console.log("fleet_ch1 "+GM_getValue("moveFleet:fleet_ch1:"+playerID, null));
@@ -2817,7 +2994,7 @@ function dispatch(ctx) {
     return;
   }
 
-  var aeData = { 
+  ctx.data = { 
     "server": server,
     "time": serverTime,
     "playerID": playerID,
@@ -2855,43 +3032,45 @@ function dispatch(ctx) {
      */
 
   try {
-    if (url.match(/astroempires\.com/)) {
-      freeAccountRemoveAd(doc);
-      replaceTime(doc);
+    if (ctx.url.match(/astroempires\.com/)) {
+      freeAccountRemoveAd(ctx.doc);
+      replaceTime(ctx.doc);
 
-      var daysOld = checkDaysOld(aeData, doc);
+      var daysOld = checkDaysOld(ctx);
       if (daysOld != null) {
-        sendQ.clear();
+        //sendQ.clear();
         consoleMsg("data is "+daysOld+" days old");
-        //        return;
+        ctx.follow = "none";
       }
-      if (url.match(/view=scanners/)) { 
-        parseScanner(aeData, url, doc, follow);
 
-      } else if (url.match(/fleet\.aspx\?fleet=(\d+)&view=move/)) {
-        //moveFleet(aeData, url, doc);
+      if (ctx.url.match(/map\.aspx\?loc=[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
+        parseAstro(ctx);
 
-      } else if (url.match(/fleet\.aspx/)) {
-        parseFleet(aeData, url, doc);
+      } else if (ctx.url.match(/map\.aspx\?loc=[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}$/)) {
+        parseSystem(ctx);
 
-      } else if (url.match(/base\.aspx\?base=\d+/)) {
-        parseBase(aeData, url, doc, follow);
-
-      } else if (url.match(/map\.aspx\?loc=[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
-        parseAstro(aeData, url, doc, follow);
-
-      } else if (url.match(/map\.aspx\?loc=[A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2}/)) {
-        parseSystem(aeData, url, doc,follow);
-
-      } else if (url.match(/map\.aspx\?(zoom=\d&)?loc=[A-Za-z][0-9]{2}:[0-9]{2}$/)) {
+      } else if (ctx.url.match(/map\.aspx\?(zoom=\d&)?loc=[A-Za-z][0-9]{2}:[0-9]{2}$/)) {
         //parseRegion();
+      }
 
-      } else if (url.match(/empire\.aspx(\?view=bases_events)?$/)) {
+      if (daysOld == null) {
+        if (ctx.url.match(/view=scanners/)) { 
+          logTrace();
+          parseScanner(ctx);
 
-        parseEmpire(aeData, url, doc, follow);
+        } else if (ctx.url.match(/fleet\.aspx/)) {
+          parseFleet(ctx);
 
-      } else if (url.match(/guild\.aspx/)) {
-        parseGuild(aeData, url, doc, follow);
+        } else if (ctx.url.match(/base\.aspx\?base=\d+/)) {
+          parseBase(ctx);
+
+        } else if (ctx.url.match(/empire\.aspx(\?view=bases_events)?$/)) {
+
+          parseEmpire(ctx);
+
+        } else if (ctx.url.match(/guild\.aspx/)) {
+          parseGuild(ctx);
+        }
       }
       /*
   try {
@@ -2904,13 +3083,17 @@ function dispatch(ctx) {
       //  not every dispatch will result in a send to aegis server
       //  ensure ondispatch gets called anyway
       //
-      if (aeData.hasData()) {
-        sendToServer(aeData, aegisURLstore, ctx.ondispatch);
+      if (ctx.data.hasData()) {
+        ctxSendToServer(ctx);
+
       } else {
         if (typeof ctx.ondispatch === "string") {
         logTrace("ondispatch: "+ctx.ondispatch);
+        var ondispatch = ctx.ondispatch;
+        delete ctx.ondispatch;
+
           try {
-            aegis[ctx.ondispatch](ctx);
+            aegis[ondispatch](ctx);
           } catch(e) {
             console.log('error: ', e);
           }
@@ -2919,7 +3102,8 @@ function dispatch(ctx) {
     }
   } catch(e) {
     console.log(e);
-    consoleMsg(e.shortstack().join("\n&nbsp;&nbsp;"), "errMsg"); 
+    consoleMsg(e.shortstack().join("\n&nbsp;&nbsp;"), "infoMsg"); 
+    consoleMsg(e.message, "errMsg");
     /*
     var errorMsg = {
       "server": server,
@@ -2927,7 +3111,7 @@ function dispatch(ctx) {
       "playerID": playerID,
       "msg": e.message,
       "stack": e.stack,
-      "url": url
+      "ctx.url": ctx.url
     };
     sendToServer(errorMsg);
     */
@@ -2952,6 +3136,34 @@ function CurrentServerTime()
   var mCurrentServerTime = moment(mServerTime).add(localDiff);
   return mCurrentServerTime;
 }
+
+
+this.doit = function() {
+  consoleClear();
+  consoleMsg('doin it')
+//  var key = keys[0];
+//  for (var i=0; key != null; key=keys[i++] ) {
+  var keys = GM_listValues();
+  keys.forEach(function(el, i ,a) {
+    if (el.match(/^ctxChain:/)) {
+      GM_deleteValue(el);
+    }
+  });
+  console.log('cleared chains', GM_getValue("ctxChain:next"));
+
+  var m = $('#curGalReg').html().match(/[A-Za-z][0-9]{2}/);
+
+  consoleMsg('scouting galaxy '+m[0]);
+
+  if (m.length) {
+    ctxSendToServer({data:{func:"scoutGalaxy", ctx: {galaxy: m[0], scouts: 10, start: $("#moveScoutFrom").val()}}, 
+      route:aegisURLquery, ondispatch:"ctxQueryResponse"}); 
+  } else {
+    consoleMsg('no galaxy selected', 'errMsg');
+  }
+}
+
+
 /*  ctx.command = {func: "string", ctx: "object"}
  *  
  */
@@ -2963,34 +3175,44 @@ this.ctxRunCmd = function(ctx)
   var cmdCtx = ctx.ctx;
   cmdCtx.chainID = ctx.chainID;
 
-  consoleMsg("processing command:<br>&nbsp;&nbsp;"+cmd + "("+ cmdCtx + ")");
+/*
+  if (tryAssertHas(cmdCtx, {msg: "string"}), 1) {
+    consoleMsg('get '+cmdCtx.msg);
+  } else {
+  */
+    consoleMsg("processing command:<br>&nbsp;&nbsp;"+cmd + "("+ cmdCtx + ")");
+    for (i in cmdCtx) {
+      consoleMsg(i + ": " +cmdCtx[i]);
+    }
+//  }
 
   try {
-    aegis[cmd](cmdCtx);
+    ctxCmd = aegis[cmd](cmdCtx);
   } catch(e) {
     consoleMsg(e.message + "<br>"+cmd+"<br>"+e.shortstack().join("\n&nbsp;&nbsp;"), "errMsg");
+    ctxCmd.error = e.message;
   }
-
-  if (cmd == "ctxQueueGet" && (! (isSending()))) {
-    console.log('sendqueued');
-    ctx.doneMsg = "done";
-    sendQueued(ctx);
-  }
+  return ctxCmd;
 
 }
 
-this.queryResponse = function(ctx)
+//  handle a response from a server query
+//
+this.ctxQueryResponse = function(ctx)
 {
-  try {
-    assertHas(ctx, {response: "object"});
+  logTrace();
+  if (tryAssertHas(ctx, {response: "object"}, 1)) {
+    logTrace("response");
+    console.log(ctx);
 
     for (i in ctx.response) {
-      console.log("queryResponse: ",i, " => ", ctx.response[i]);
+      consoleMsg(i + " => " +ctx.response[i]);
     }
 
-  } catch(e) {}
-  try {
-    assertHas(ctx, {command: "object"});
+  }
+  if (tryAssertHas(ctx, {command: "object"}, 1)) {
+    logTrace("command");
+    console.log(ctx);
 
     console.log("server sent command: ", ctx.command);
     var cmdCtx = ctx.command;
@@ -2998,18 +3220,62 @@ this.queryResponse = function(ctx)
     // come back here when the command finishes
     //   should the command result in a dispatch
     //
-    cmdCtx.ctx.ondispatch = "queryResponse";
+    cmdCtx.ctx.ondispatch = "ctxQueryResponse";
 
     ctxRunCmd(cmdCtx);
-  } catch(e) {}
-  console.log(ctx);
 
+    if (cmdCtx.func == "ctxQueueGet" && (! isSending())
+          && typeof ctx.inBatch == "undefined") {
+
+      consoleMsg('svr command send queued');
+      ctx.doneMsg = "svr command done";
+//      sendQueued(ctx);
+    }
+
+  }
+
+  if (tryAssertHas(ctx, {batch: "object"}, 1)) {
+    logTrace("batch");
+    console.log(ctx);
+    ctx.batch.forEach(function(el, i , a) {
+      logTrace(el);
+      el.inBatch = 1;
+      ctxQueryResponse(el);
+
+    });
+    ctx.doneMsg = "batch done";
+    consoleMsg('send queued');
+    sendQueued(ctx);
+  }
+
+  if (tryAssertHas(ctx, {chain: "object"}, 1)) {
+    logTrace("queryResponse: chain");
+    console.log(ctx);
+
+//  ctx = ctxChainCmd(ctx,{func: 'scanRegion', ctx: {region: ctx.destination}});
+
+    ctx.chain.forEach(function(chain, ci , a) {
+      var ctxChain = {};
+      chain.forEach(function(cmd, i , a) {
+        ctxChain = ctxChainCmd(ctxChain, cmd);
+      });
+      window.setTimeout( (function(ctx) {
+        console.log(ctx);
+        return function() {
+  console.log('doing chain: ' +GM_getValue("ctxChain:" + ctx.chainID));
+          ctxChainNext(ctx);
+        };
+      })(ctxChain), ci * 10000);
+    });
+  }
+  logTrace();
+  return ctx;
 }
 
 this.randomAstro = function(ctx)
 {
-  console.log('randomStar ',ctx);
-  sendToServer({randomAstro: ctx.randomAstro}, aegisURLquery, "queryResponse"); 
+  console.log('randomAstro ',ctx);
+  ctxSendToServer({data:ctx, route:aegisURLquery, ondispatch:"ctxQueryResponse"}); 
 }
 
 $(document).ready(function() {
@@ -3025,14 +3291,24 @@ $(document).ready(function() {
     .draggable()
     .appendTo('body');
   */
-  dispatch({url: document.URL, doc: document});
+  dispatch({url: document.URL, doc: document, follow: "all"});
+
+  log('load');
   
-  //randomAstro({randomAstro: "B39:55"});
+//  randomAstro({randomAstro: "B39:55"});
+
 });
 
 /**************************************************************************************/
 
 if (document.location.href.match(/(.+?)astroempires.com/)) {
+
+  server = document.URL.match(/\/(.+?).astroempires.com/)[1];
+  server = server.replace(/\//, '');
+  serverURL = 'http://' + server + '.astroempires.com';
+  playerID = document.getElementById('account').parentNode.getElementsByTagName("th")[1].innerHTML;
+  serverTime = document.getElementById('server-time').getAttribute('title');
+
   mServerTime = moment( document.getElementById('server-time').getAttribute('title'), 
     "YYYY/MM/DD HH:mm:ss");
   dStartTime = new Date();

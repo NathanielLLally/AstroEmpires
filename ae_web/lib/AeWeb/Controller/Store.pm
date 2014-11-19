@@ -304,7 +304,7 @@ sub storeDataC
     map { $ae->{$_}; } qw/server time playerID daysOld/;
 
   my $dbh = $s->dbh($server);
-  my $schema = $s->schema($server);
+  my $schema = $s->schema;
   my $dtServer = DateTime::Format::DateManip->parse_datetime(ParseDate($time));
 
   my $guildTag = '';
@@ -312,9 +312,11 @@ sub storeDataC
   if (defined $dbPlayer) {
     $guildTag = $dbPlayer->guildTag;
   }
+
   if (defined $daysOld) {
     my $dtData = $dtServer->clone->subtract(days => $daysOld);
     $time = $dtData->strftime("%Y-%m-%d %H:%M:%S");
+  #  die ("data is $daysOld days old");
   }
 
   if (exists $ae->{player}) {
@@ -344,7 +346,9 @@ sub storeDataC
       try {
         $sth->execute($starLoc);
       } catch {
-        die "regionStars insert: $_";
+        if ($_ !~ /Duplicate entry/) {
+          die "regionStars insert: $_";
+        }
       };
     }
   }
@@ -366,6 +370,10 @@ sub storeDataC
           {id => $dbPlayer->id, name => 'astroScan', last => $time});
     }
   }
+
+###############################################################################
+  return if (defined $daysOld);
+###############################################################################
 
   if (exists $ae->{base}) {
     foreach my $id (keys %{$ae->{base}}) {
@@ -480,7 +488,7 @@ sub dumpPostData {
     #$s->render(template => 'main/response', format => 'json');
   } else {
     my ($server, $time, $playerID, $daysOld) = map { $aeData->{$_}; } qw/server time playerID daysOld/;
-    my $schema = $s->schema($server);
+    my $schema = $s->schema;
     if (defined $schema) {
       my $dbPlayer = $schema->resultset('Player')->find($playerID);
       if (defined $dbPlayer) {
@@ -517,6 +525,7 @@ sub dumpPost {
     $s->render(status => 400);
   } else {
     my ($server, $time, $playerID, $daysOld) = map { $aeData->{$_}; } qw/server time playerID daysOld/;
+
     my $schema = $s->schema($server);
     if (defined $schema) {
       my $dbPlayer = $schema->resultset('Player')->find($playerID);
@@ -536,7 +545,44 @@ sub dumpPost {
       $s->render(status => 200);
     } catch{
       $s->app->log->debug("norm error: $_");
-      $s->stash(json => {response => $_ });
+      if ($_ =~ /^(.*?)at \//) {
+        $s->stash(json => {response => $1 });
+      }
+      $s->render(status => 500);
+    };
+
+  }
+}
+
+sub log {
+  my $s = shift;
+
+  $s->app->log->debug($s->req->body);
+
+  my $json = Mojo::JSON->new;
+  my $data = $json->decode( $s->req->body );
+  my $err  = $json->error;
+
+  if ($json->error) {
+    $s->stash(json => { error => $json->error });
+    $s->render(status => 400);
+  } else {
+    my ($server, $time, $playerID, $daysOld) = map { $data->{$_}; } qw/server time playerID daysOld/;
+
+    my %ctx = map { $_ => $data->{$_} } grep { /time|playerID|line/ }keys %$data;
+
+    my $schema = $s->schema($server);
+
+    try {
+      $schema->resultset('Log')->create(\%ctx);
+
+      $s->stash(json => { response => 'success' });
+      $s->render(status => 200);
+    } catch{
+      $s->app->log->debug("norm error: $_");
+      if ($_ =~ /^(.*?)at \//) {
+        $s->stash(json => {response => $1 });
+      }
       $s->render(status => 500);
     };
 

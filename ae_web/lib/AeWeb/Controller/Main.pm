@@ -341,6 +341,7 @@ sub login {
     } else {
       $s->session('guildTag' => undef);
     }
+#    my $dbPlayer = $schema->resultset('Player')->find('7151');
 
     $s->getProcs;
 
