@@ -353,6 +353,10 @@ sub storeDataC
     }
   }
 
+  #  if there is an astro with no base,
+  #    somebody disbanded
+  #
+  my %baseRemoval = ();
   if (exists $ae->{astro}) {
     foreach my $location (keys %{$ae->{astro}}) {
       my $e = $ae->{astro}->{$location};
@@ -361,6 +365,8 @@ sub storeDataC
       $col{location} = $location,
       $col{time} = $time;
       $col{guildTag} = $guildTag;
+
+      $baseRemoval{$location}++;
       
       my $dbAstro = $schema->resultset('Astro')->update_or_create(%col);
     }
@@ -384,6 +390,8 @@ sub storeDataC
       $col{guildTag} = $guildTag;
 
       my $dbBase =  $schema->resultset('Base')->update_or_create(%col);
+
+      delete $baseRemoval{$col{location}};
 
       #  possibly not in packet
       #
@@ -415,6 +423,22 @@ sub storeDataC
       }
     }
   }
+
+  foreach my $loc (keys %baseRemoval) {
+    my @rs = $schema->resultset('Base')->search({
+      guildTag => $guildTag,
+      location => $loc
+    })->all;
+    if ($#rs >= 0) {
+#  multiple entries from multiple reporters
+      $s->app->log->debug('removing orphan base '.$loc. " ".$#rs);
+      $rs[0]->delete;
+
+    } else {
+      $s->app->log->debug('no orphans at '.$loc);
+    }
+  }
+
   if (exists $ae->{fleet}) {
 
 # parseMapFleet is going to parse every fleet in a location
