@@ -38,7 +38,7 @@
  */
 //boards ad
 if (window.name == 'aswift_1') {
-  return;
+//  return;
 }
 
 /* global variables filled by dispatch */
@@ -63,33 +63,47 @@ moment.prototype.formatDefault = function()
   return this.format("YYYY-MM-DD HH:mm:ss");
 }
 
-
-this.log = function()
+function toString(any)
 {
-  var args = Array.prototype.slice.call(arguments);
+  //  arguments is *not* an array,
+  //    but Array.slice can create one of it
+  //
+  var args = Array.prototype.slice.call(any);
   var line = [];
-  //build a string
 
+  //build a string
+  //
   args.forEach(function (el, i ,a) {
     if (typeof el === "string") {
+      line.push('"'+el+'"');
+    } else if (typeof el === "number") {
       line.push(el);
-    } else if (typeof el === "array") {
-      line.push("[" + el.join(',') + "]");
     } else if (typeof el === "object") {
       line.push(JSON.stringify(el, null, '\t'));
     }
   });
+
+  return line.join('\n');
+}
+
+// send a log line 
+//
+this.log = function()
+{
   ctxSendToServer({route: aegisURLlog,
-    data: {line: line.join('\n')}});
+    data: {line: toString(arguments) }
+  });
 }
 
 //  debugging function
 //
 this.trace = {};
-function logTrace(msg) {
+function logTrace() {
+  var msg = toString(arguments);
+
   var s = new Error().shortstack();
   s.shift(); //this
-  if (s[0].match(/^tryAssertHas/)) {
+  if (s[0].match(/^(tryAssertHas|hasValidArgs)/)) {
     s.shift(); //tryAssertHas can be skipped also
   }
   var caller = {
@@ -107,11 +121,54 @@ function logTrace(msg) {
   }
 
   var m = aegis.trace[caller.fqn].marker;
-  if (typeof msg !== "undefined") {
+  if (msg.length) {
     m = msg;
   }
   console.log("[",caller.fn, ":",caller.line,"] > ", m );
 }
+
+//  for optional properties
+//  skip the logTrace
+//
+function tryAssertHas(ctx, types)
+{
+  try {
+    assertHas(ctx,types);
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+function hasValidArgs(ctx, types)
+{
+  try {
+    assertHas(ctx, types);
+    return true;
+  } catch(e) {
+    console.log(e);
+    return false;
+  }
+}
+
+//  assert ctx os an object
+//    if types supplied, properties of ctx
+//    are of type specified in values
+// 
+function assertHas(ctx, types) {
+  if (typeof (ctx) !== 'object') {
+    throw new Error('invalid context: ' + typeof (ctx));
+  }
+  //    ctx.assert(types);
+  if (typeof (types) === 'object') {
+    for (var i in types) {
+      if (typeof (ctx[i]) !== types[i]) {
+        throw new Error('assertion ' + i + ' requires ' + types[i] + ', given ' + typeof (ctx[i]));
+      }
+    }
+  }
+}
+
 
 /* attempt at creating a tab */
 (this.setTabName = function() {
@@ -557,7 +614,7 @@ function myFleetsTo(location)
 this.ctxChainCmd = function(ctx, cmd)
 {
 //  logTrace();
-  if (!tryAssertHas(cmd, {func: "string", ctx: "object"})) { return; };
+  if (!hasValidArgs(cmd, {func: "string", ctx: "object"})) { return; };
 
   var tag = 'ctxChain:',
     chainID;
@@ -583,12 +640,15 @@ this.ctxChainCmd = function(ctx, cmd)
 
 this.ctxChainNext = function(ctx)
 {
+  if (!hasValidArgs(ctx, {chainID: "number"})) return;
   logTrace();
-  tryAssertHas(ctx, {chainID: "number"});
+
   var tag = 'ctxChain:';
   var chain = JSON.parse(GM_getValue(tag + ctx.chainID, "[]"));
 
   consoleMsg('doing next in chain '+tag + ctx.chainID);
+  log('doing next in chain ',tag, ctx.chainID);
+
   chain.forEach(function(el, i, a) { 
     consoleMsg("&nbsp;&nbsp;"+i+": "+el.func);
   });
@@ -602,6 +662,8 @@ this.ctxChainNext = function(ctx)
 
   cmd.chainID = ctx.chainID;
   console.log(cmd);
+  log(cmd);
+
   try {
     ctxRunCmd(cmd);
   } catch(e) {
@@ -613,7 +675,9 @@ this.ctxChainNext = function(ctx)
 //
 function moveScout(ctx)
 {
-  if (!tryAssertHas(ctx,{origin: "string", destination:"string"})) {return;}
+  if (!hasValidArgs(ctx,{origin: "string", destination:"string"})) 
+    return;
+
   logTrace();
   ctx = ctxChainCmd(ctx,{func: 'scanRegion', ctx: {region: ctx.destination}});
   /*
@@ -627,7 +691,8 @@ function moveScout(ctx)
 
 this.ctxMoveScout = function(ctx)
 {
-  if (!tryAssertHas(ctx,{origin: "string", destination:"string"})) {return;}
+  if (!hasValidArgs(ctx,{origin: "string", destination:"string"})) 
+    return;
   logTrace();
  
   var fleet = myFleetAt(ctx.origin);
@@ -666,11 +731,7 @@ this.ctxReturnHome = function(ctx)
   ctx.data.destination = origin;
 
   console.log(ctx);
-  ctxQueueGet(ctx);
-
-  if (!isSending()) {
-    sendQueued({doneMsg: "fleet sent home"});
-  }
+  ctx.sendQ.push(ctx);
 
 }
 
@@ -692,14 +753,17 @@ this.ctxCheckFleet = function(ctx) {
       }
     }
   });
-  logTrace(JSON.stringify(fleetSent));
+  logTrace("fleet sent "+JSON.stringify(fleetSent));
 
 /*  errors:
   You can only move a fleet 5 seconds after it arrives at a location
   */
 
   ctx.fleetID = fleetSent.id;
-  consoleMsg(fleetSent.name + ' checked in' +'<br>&nbsp;&nbsp;bound for '+ctx.destination);
+  consoleMsg(fleetSent.name + ' checked in'
+      +'<br>&nbsp;&nbsp;bound for '+ctx.destination
+      +'<br>&nbsp;&nbsp;arriving in '+fleetSent.arrival+'s'
+      );
 
   //  onarrival
   //
@@ -714,13 +778,9 @@ logTrace();
   vctx.url = serverURL+"/fleet.aspx";
   vctx.msg =  "verifying arrival";
   vctx.onload = "ctxLoadDispatch";
-  ctxQueueGet(vctx);
-logTrace();
-  if (!isSending()) {
-logTrace();
-    ctx.doneMsg = "fleet has arrived";
-    sendQueued(ctx);
-  }
+
+  ctx.sendQ = new SendAE({doneMsg: "fleet has arrived"});
+  ctx.sendQ.push(vctx);
 
 logTrace();
       aegis[callback](ctx);
@@ -740,10 +800,13 @@ logTrace();
 
 //function moveFleet(aeData, url, doc)
 
+// convert to SendAE queue
+//
 this.sendMoveFleet = function(ctx)
 {
   logTrace();
   console.log(ctx);
+  log(ctx);
 
   //  if origin got into the context,
   //    it's a returnHome trip
@@ -1069,7 +1132,10 @@ this.ConsoleToolbox = function() {
       .attr({id:'btnSendQCancel', class: 'aegisToolbox-button'})
       .html( '   Cancel   ' )
       .click( function() {
-        sendQ.clear();
+        var sendQ = new SendAE();
+        sendQ.clearAll();
+        sendQ = undefined;
+
         $( this ).hide();
         consoleMsg('cancelled', 'infoMsg');
       })
@@ -1102,10 +1168,13 @@ this.ConsoleToolbox = function() {
       .click( function() {
         document.title = 'Scan Bases';
         var locs = JSON.parse(GM_getValue('myBases',"[]"));
+        var ctx = {}
+        ctx.sendQ = new SendAE({doneMsg:"completed scan of bases"});
+
         locs.forEach(function(el,i,a) {
-          scanRegion({region:el, skipSend: 1});
+          ctx.region = el;
+          scanRegion(ctx);
         });
-        sendQueued({doneMsg: "completed scan of bases"});
 
         $( document.createElement('span') )
           .attr({id:'btnCancel', class: 'aegisToolbox-button'})
@@ -1191,13 +1260,71 @@ this.ConsoleToolbox = function() {
       })
       .appendTo($tbxFleet);
 
+var $devel = tbxSection('Devel                   Tab #'+getTabID());
+
+   $( document.createElement('span') )
+      .attr('id','btnClearall')
+      .attr('class','aegisToolbox-button wideRight')
+      .html('Clear Queues & Chains')
+      .click( function () {
+          var keys = GM_listValues();
+  var key = keys[0];
+  for (var i=0; key != null; key=keys[i++] ) {
+    
+    if (key.match(/^ctxChain:/)) {
+      console.log('clearing '+key);
+      GM_deleteValue(key);
+    }
+    if (key.match(/^sendQ:/)) {
+      console.log('clearing '+key);
+      GM_deleteValue(key);
+    }
+  }
+      }).appendTo( $devel );
+
     $( document.createElement('span') )
       .attr('id','btnDoIt')
       .attr('class','aegisToolbox-button wideRight')
       .html('     Do It      ')
       .click( function () {
         aegis['doit']();
-      }).appendTo( tbxSection('Devel') );
+      }).appendTo( $devel );
+
+    $(document.createElement('input'))
+      .attr({id: 'doit1'})
+      .attr('maxlength','2')
+      .attr('name','doit1')
+      .attr('class','reset-this aegisLoc hasLabel')
+      .attr("type", "text")
+      .change(function() {
+        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
+      })
+      .appendTo($devel);
+
+    $(document.createElement('input'))
+      .attr({id: 'doit2'})
+      .attr('maxlength','2')
+      .attr('name','doit2')
+      .attr('class','reset-this aegisLoc hasLabel')
+      .attr("type", "text")
+      .change(function() {
+        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
+      })
+      .appendTo($devel);
+
+    $(document.createElement('input'))
+      .attr({id: 'doit3'})
+      .attr('maxlength','2')
+      .attr('name','doit3')
+      .attr('class','reset-this aegisLoc hasLabel')
+      .attr("type", "text")
+      .change(function() {
+        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
+      })
+      .appendTo($devel);
+
+
+
 
      var $tbxConsole = tbxSection('Console');
     ConsoleConsole().appendTo( $tbxConsole );
@@ -1224,8 +1351,6 @@ this.ConsoleConsole = function() {
         var downPos = $(this).data().downPos;
         $(this).removeData("downPos");
         if (downPos.x == e.pageX && downPos.y == e.pageY) {
-          consoleClear();
-        /*
           // toggle console size
           var $el = $("#aegisConsole");
           var m = $el.attr('class').match(/^(.*?)(-small)?$/);
@@ -1235,7 +1360,6 @@ this.ConsoleConsole = function() {
             $el.attr('class', m[1] + '-small');
           }
           GM_setValue("setting:class:aegisConsole", $el.attr('class'));
-          */
         }
       })
       .html( GM_getValue('aegisConsole:'+getTabID(),
@@ -1860,7 +1984,9 @@ function fieldPlayerFromLink(aeData, link)
 
 function checkDaysOld(ctx)
 {
-  if (!tryAssertHas(ctx, {doc: "object", data: "object"})) { return; };
+  if (!hasValidArgs(ctx, {doc: "object", data: "object"}))
+    return;
+
   var daysOld = null;
   var center = ctx.doc.getElementsByTagName('center');
   for (i = 0; i < center.length; i++) {
@@ -1876,8 +2002,9 @@ function checkDaysOld(ctx)
 
 //function parseMapFleet(aeData, table, location, follow) {
 function parseMapFleet(ctx) {
-  if (!tryAssertHas(ctx, {data: "object",  
-    table: "object", follow: "string"})) { return; }
+  if (!hasValidArgs(ctx, {data: "object",  
+    table: "object", follow: "string"}))
+    return;
  
   if (ctx.location) {
     consoleMsg('parseMapFleet '+ctx.location);
@@ -1929,8 +2056,8 @@ function parseMapFleet(ctx) {
 
     if (Object.keys(dtRow).length > 0 && dtRow['id'] != null) {
       if (ctx.follow == "fleet" || ctx.follow == "all") {
-        ctxQueueGet({url: "fleet.aspx?fleet="+dtRow['id'],
-          msg: "scanning fleet "+dtRow['id']});
+        ctx.sendQ.push({url: "fleet.aspx?fleet="+dtRow['id']});
+//          msg: "scanning fleet "+dtRow['id']});
       }
 
       ctx.data.add('fleet',dtRow);
@@ -1939,9 +2066,9 @@ function parseMapFleet(ctx) {
 }
 
 function parseScanner(ctx){
-  if (!tryAssertHas(ctx, 
+  if (!hasValidArgs(ctx, 
         {data: "object", doc: "object", url: "string", follow: "string"})
-     ) { return; }
+     ) return;
 
   consoleMsg('parseScanner');
   //console.log(xml2string(ctx.document.getElementById('coded_scanners')));
@@ -1960,9 +2087,9 @@ function parseScanner(ctx){
 
 
 function parseFleet(ctx) {
-  if (!tryAssertHas(ctx, 
+  if (!hasValidArgs(ctx, 
         {data: "object", doc:"object", url: "string", follow: "string"})
-     ) { return; }
+     ) return;
 
   var dtRow = {};
   if (ctx.url.match(/fleet.aspx\?fleet=(\d+)&view=move/)) {
@@ -2034,7 +2161,7 @@ function parseFleet(ctx) {
     }
     for (var i in dest) {
       if (i != "add") {
-        logTrace(i + ":" + JSON.stringify(dest[i]));
+//        logTrace(i + ":" + JSON.stringify(dest[i]));
         GM_setValue("myfleets:to:"+ i, JSON.stringify(dest[i]));
       }
     }
@@ -2054,6 +2181,9 @@ function parseFleet(ctx) {
   //  just care about nme fleets
   if (playerAndLoc != null && playerAndLoc.getElementsByTagName('form').length > 0) {
     console.log('returning');
+    return;
+  }
+  if (typeof playerAndLoc === "undefined") {
     return;
   }
   var rows =  playerAndLoc.getElementsByTagName('tr');
@@ -2235,7 +2365,8 @@ function parseSystem(ctx) {
           astroRow['base'] = baseRow['id'];
 
           if (ctx.follow == "base" || ctx.follow == "all") {
-            ctxQueueGet({url: link.href, msg: "found base at "+astroRow['location']});
+            ctx.sendQ.push({url: link.href});
+            //, msg: "found base at "+astroRow['location']});
           }
         }
 
@@ -2269,10 +2400,10 @@ function parseSystem(ctx) {
 
                       //follow the fleet unless already following because of base
                       //
-                      if (baseRow['id'] == null || ctx.follow != "base") {
+                      if (baseRow['id'] == null) {
                         if (ctx.follow == "fleet" || ctx.follow == "all") {
-                          ctxQueueGet({url: "map.aspx?loc="+astroRow['location'],
-                              msg: "found fleet at "+astroRow['location']});
+                          ctx.sendQ.push({url: "map.aspx?loc="+astroRow['location']});
+//                              msg: "found fleet at "+astroRow['location']});
                         }
                       }
                     }
@@ -2625,100 +2756,455 @@ function assert(ctx, types) {
 }
  */
 
-//  helper
+//  the concept of multiple tabs in a web browser with the option
+//  for persistent storage make for an amusing perversion of 
+//  object oriented programming.
 //
-function tryAssertHas(ctx, types, skip)
-{
+//  the actual object constructed from SendAE will hold nothing but 
+//  an id number.  everything else is an accessor which uses the id
+//  to interact with a round robin circular array of http request
+//  queues.
+//
+var sqAlarm;
+
+//  untaint a string for regex use
+//
+RegExp.quote = function(str) {
+  return str.replace(/([.?*+^$[\]\\(){}|-])/g, "\\$1");
+};
+
+function SendAE(ctx) {
+  var tag = 'sendQ:';
   try {
-    assertHas(ctx,types);
-    return 1;
+    assertHas(ctx, {sqID: "number"});
+    this.sqID = ctx.sqID;
+
   } catch(e) {
-    if (typeof skip === "undefined") {
-      logTrace(e);
-    }
-    return 0;
-  }
-}
+    this.sqID = GM_getValue(tag + "newID", 0);
+    GM_setValue(tag + 'newID', this.sqID + 1);
 
-function assertHas(ctx, types) {
-  if (typeof (ctx) !== 'object') {
-    throw new Error('invalid context: ' + typeof (ctx));
+    logTrace('new send queue id:'+this.sqID);
   }
-  //    ctx.assert(types);
-  if (typeof (types) === 'object') {
-    for (var i in types) {
-      if (typeof (ctx[i]) !== types[i]) {
-        throw new Error('assertion ' + i + ' requires ' + types[i] + ', given ' + typeof (ctx[i]));
+  var sendQ = this;
+  this.tag = tag + this.sqID;
+  this.wait = {
+    min: 500,
+    max: 3000
+  };
+  this.tabID = getTabID();
+
+  //  extra tags sent in ctx get stored
+  //
+  //  names in this
+  var userProps = JSON.parse(GM_getValue(this.tag + ':userProps', "[]"));
+  try {
+    var tag = this.tag;
+    assertHas(ctx);
+
+    $.each(ctx, function(k, v) {
+      if (k != 'sqID') {
+        logTrace('sqID: ',sendQ.sqID, k, v);
+        if ($.inArray(userProps, k) == -1 ) {
+          userProps.push(k);
+
+          //store new value since we are here
+          GM_setValue(tag + ':user:'+k, JSON.stringify(v));
+        }
       }
+    });
+
+    if (userProps.length) {
+      //values in this one
+      GM_setValue(tag + ":userProps", JSON.stringify(userProps));
+
+      $.each(userProps, function(i, el) {
+        sendQ[el] = JSON.parse(GM_getValue(tag + ":user:"+ el, "{}"));
+        logTrace("tag: "+tag, el, sendQ[el]);
+      });
     }
+  } catch(e) {}
+
+}
+
+SendAE.prototype.eachInLine = function(cb)
+{
+  var line = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  line.forEach(function(el) {
+    var sendQ = new SendAE({sqID: el});
+    cb(sendQ);
+    sendQ = undefined;
+  });
+}
+SendAE.prototype.getInLine = function()
+{
+  //possible misnomer onallQIDs
+  //
+  var allQIDs = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  if ($.inArray(this.sqID, allQIDs) == -1) {
+    allQIDs.push(this.sqID);
+    GM_setValue('sendQ:allQIDs', JSON.stringify(allQIDs));
+  }
+
+}
+SendAE.prototype.leaveLine = function()
+{
+  logTrace();
+  var allQIDs = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  var sqID = this.sqID;
+//  logTrace(allQIDs, this.sqID);
+
+  allQIDs = $.grep(allQIDs, function(el) {
+    return (el !== sqID);
+  });
+
+//  logTrace(allQIDs, this.sqID);
+
+  GM_setValue('sendQ:allQIDs', JSON.stringify(allQIDs) );
+}
+
+// on empty list, return self.sqID so always returns actual next in line
+//
+SendAE.prototype.nextInLine = function()
+{
+  //  keep it circular
+  var allQIDs = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  var next = allQIDs.shift();
+  if (typeof next !== "undefined") {
+    allQIDs.push(next);
+    GM_setValue('sendQ:allQIDs', JSON.stringify(allQIDs));
+  } else {
+    next = this.sqID;
+  }
+  logTrace('returning next in line: '+next);
+  return next;
+}
+
+//set a wait time in the future unless it already is
+//  return ms from now
+//
+SendAE.prototype.setWait = function(ms)
+{
+  /*
+     var allQIDs = JSON.parse(GM_getValue(tag + 'allQIDs', "[]"));
+     */
+
+  var waitMS = ms;
+
+  if (typeof waitMS !== "number") {
+    waitMS = Math.floor(Math.random() * (this.wait.max - this.wait.min))
+      + this.wait.min;
+  }
+
+  var mNow = moment();
+  var mWaitFor = moment(GM_getValue('sendQ:waitFor', (new Date().getTime() + waitMS)));
+  if (mNow.isAfter(mWaitFor))
+    mWaitFor = mNow.clone().add(waitMS, 'ms');
+
+  GM_setValue('sendQ:waitFor', mWaitFor.valueOf());
+  /*
+  logTrace({now: mNow.format('HH:mm:ss.SSS'),
+    waitFor: mWaitFor.format('HH:mm:ss.SSS')});
+*/
+
+  return (mWaitFor.valueOf() - mNow.valueOf());
+}
+
+//  re-set waitFor based on new ms, or current sendQ:waitFor
+//
+SendAE.prototype.waitFor = function(ms)
+{
+//  logTrace();
+  window.clearTimeout(sqAlarm);
+
+  var waitMS = this.setWait(ms);
+  logTrace('setting alarm '+waitMS);
+
+  if (!this.allAreEmpty()) {
+    //call again after wait time
+    sqAlarm = window.setTimeout( 
+      (function (q) {
+        return function() { 
+        logTrace('alarm went off');
+          q.send(); 
+        };
+      })(this), waitMS);
   }
 }
 
-var sendQ = {
-  items: 0,
-  head: 0,
-  push: function(ctx) {
-    assertHas(ctx, {url: "string", msg: "string"});
+SendAE.prototype.canSend = function()
+{
 
-    var tag = 'sendQ:'+ getTabID();
-    var tail = GM_getValue(tag+':tail',0);
-    /*
-    GM_setValue(tag +':url:'+tail, JSON.stringify(ctx))
-      GM_setValue(tag +':msg:'+tail, msg);
-      */
-    GM_setValue(tag +':ctx:'+tail, JSON.stringify(ctx))
+  if ((new Date().getTime())
+      > parseInt(GM_getValue("sendQ:waitFor", 0)))
+    return true;
 
-//    console.log("set "+tag +':'+tail);
+  return false;
+}
 
-    GM_setValue(tag+':tail',++tail);
-//    console.log("new tail "+ GM_getValue(tag+':tail',0));
-  },
-  shift: function() {
-    var tag = 'sendQ:'+ getTabID();
-    var head = GM_getValue(tag+':head',0);
-    var tail = GM_getValue(tag+':tail',0);
 
-    var ctx = JSON.parse(GM_getValue(tag +':ctx:'+head, ''));
 
-//    console.log('head '+head+ ' url '+ctx.url);
+//  send from whichever queue is next up in line
+//
+SendAE.prototype.send = function()
+{
+  if (!this.canSend()) {
+    this.waitFor();  //(re)set wait alarm
+    return;
+  }
+  logTrace();
 
-    try {
-      assertHas(ctx, {url: "string", msg: "string"});
-    } catch(e) {
-      console.log(e);
-      return;
-    }
+  var nextID, sendQ, ctx;
+  while (typeof ctx === "undefined") {
+    nextID = this.nextInLine();
+    sendQ = new SendAE({sqID: nextID});
+    ctx = sendQ.shift();
+    logTrace(sendQ.sqID);
+  }
+
+  logTrace(sendQ.sqID, 'sending a :', ctx);
+
+  //    GM_deleteValue('sendQ:waitFor');
+  if (ctx == null) {
+    throw new Error("sendQ "+nextID+"empty on send!");
+  }
+
+  if (tryAssertHas(ctx, {msg: "string"})) {
+    consoleMsg(ctx.msg);
+  }
+
+  //  show our cancel button
+  $( '#btnSendQCancel' ).show();
+
+  this.setWait();
+
+  GM_xmlhttpRequest({
+    method: 'GET',
+    url: ctx.url,
+    timeout: 15000,
+    ontimeout: function(response) {
+      consoleMsg("ae server timeout", "errMsg");
+      sendQ.push(ctx);
+    },
+    onerror: function(response) {
+      console.log("onerror :"+response);
+    },
+    onload: function(resp) {
+      logTrace('send:onload, sqID:'+sendQ.sqID);
+      var tag = sendQ.tag;
+      pending = GM_getValue(tag+':pending',0);
+      GM_setValue(tag+':pending', --pending);
+
+      ctx.html = resp.responseText;
+      ctx = ctxResponseDoc(ctx);
+      ctx.sendQ = sendQ;
+
+      //  every queue item can have its own onload callback
+      // 
+      try {
+        assertHas(ctx, {onload: "string"});
+
+        aegis[ctx.onload](ctx);
+
+      } catch(e) { }
+
+      //  this q is done barring a lazy reference
+      //
+      if (sendQ.isEmpty() && !sendQ.hasPending()) {
+        logTrace(sendQ.sqID);
+
+        if (tryAssertHas(sendQ, {chainID: "number"})) {
+          logTrace('yey chain!');
+          ctxChainNext(sendQ);
+        } else {
+          logTrace('no chain');
+        }
+        if (typeof sendQ.doneMsg === "string") {
+          consoleMsg(sendQ.doneMsg, "infoMsg");
+
+          //dont rely on a message here
+          //
+          if (sendQ.doneMsg.match(/completed scan/)) {
+            document.title = ">" + document.title;
+          }
+        } else {
+          logTrace(sendQ.sqID);
+          consoleMsg("done", "infoMsg");
+        }
+      } else {
+        logTrace('not empty');
+      }
+
+      if (sendQ.allAreEmpty() && sendQ.noneHavePending()) {
+        logTrace();
+        $('#btnSendQCancel').hide();
+
+        GM_deleteValue('sendQ:waitFor');
+      } else {
+        logTrace('sqid:'+sendQ.sqID);
+        sendQ.waitFor(100);
+      }
+
+    }  
+  });
+}
+SendAE.prototype.push = function(ctx)
+{
+  if (!hasValidArgs(ctx, {url: "string"})) return;
+
+  // context convenience fixups 
+  //
+  var re = new RegExp(RegExp.quote(serverURL));
+
+  if (!ctx.url.match(re)) {
+    ctx.url = serverURL + "/" + ctx.url;
+  }
+  try {
+    assertHas(ctx, {onload: "string"});
+  } catch(e) {
+    ctx.onload = "ctxDispatchResponse";
+  }
+
+  var tag = this.tag,
+      sqID = this.sqID;
+
+  var tail = GM_getValue(tag+':tail',0);
+
+  logTrace(tag,'t:',tail,ctx);
+
+  GM_setValue(tag +':ctx:'+tail, JSON.stringify(ctx));
+
+  GM_setValue(tag+':tail',++tail);
+
+  //  shake shake shake senora
+  //
+  this.getInLine();
+
+  this.send();
+}
+
+SendAE.prototype.shift = function()
+{
+  logTrace(); 
+  var tag = this.tag,
+      sqID = this.sqID;
+
+  logTrace(tag); 
+  var head = GM_getValue(tag+':head',0);
+  var tail = GM_getValue(tag+':tail',0);
+  var pending = GM_getValue(tag+':pending',0);
+
+//  logTrace(tag,'h:',head,'t:',tail); 
+  var ctx = JSON.parse(GM_getValue(tag +':ctx:'+head, '{}'));
+
+//  this.leaveLine();
+
+  try {
+    assertHas(ctx, {url: "string"});
 
     GM_deleteValue(tag +':ctx:'+head);
-    GM_setValue(tag+':head',++head);
+    GM_setValue(tag+':pending',++pending);
 
-    if (head == tail) {
-      GM_setValue(tag+':tail',0);
-      GM_setValue(tag+':head',0);
-    }
-//    console.log('new head '+head + ', tail '+tail);
-    return ctx;
-  },
-  clear: function() {
-    var tag = 'sendQ:'+ getTabID();
-    var head = GM_getValue(tag+':head',0);
-    var tail = GM_getValue(tag+':tail',0);
-    for (var i = head; i <= tail; i++) {
-      GM_deleteValue(tag +':ctx:'+i);
-    }
+    logTrace('shifted a ', ctx);
+  } catch(e) {
+    ctx = undefined;
+    console.log(e);
+  }
+  logTrace();
+
+  if (tail > 0) {
+    GM_setValue(tag+':head',++head);
+  }
+  //  we are empty now, cleanup
+  //
+  if (head == tail) {
     GM_setValue(tag+':tail',0);
     GM_setValue(tag+':head',0);
+    logTrace(this.tag);
 
-    GM_deleteValue(tag+':waitFor');
-
-  },
-  length: function () {
-    var tag = 'sendQ:'+ getTabID();
-    var head = GM_getValue(tag+':head',0);
-    var tail = GM_getValue(tag+':tail',0);
-    return (tail - head);
+    this.leaveLine();
+    logTrace(this.tag);
   }
-};
+
+  return ctx;
+}
+//for the cancel button
+//  any tab hitting refresh will tie into this
+//
+SendAE.prototype.clearAll = function()
+{
+  this.eachInLine(function(q) { q.clear(); });
+
+  GM_deleteValue('sendQ:waitFor');
+  GM_deleteValue('sendQ:newID');
+  if (sqAlarm) {
+    window.clearTimeout(sqAlarm);
+  }
+
+}
+SendAE.prototype.clear = function()
+{
+  var tag = this.tag;
+  var head = GM_getValue(tag+':head',0);
+  var tail = GM_getValue(tag+':tail',0);
+  for (var i = head; i <= tail; i++) {
+    GM_deleteValue(tag +':ctx:'+i);
+  }
+  GM_deleteValue(tag+':pending');
+
+  GM_setValue(tag+':tail',0);
+  GM_setValue(tag+':head',0);
+
+  //
+  var userProps = JSON.parse(GM_getValue(tag + ':userProps', "[]"));
+  $.each(userProps, function(k, v) {
+    GM_deleteValue(tag + ":user:"+ k);
+  });
+
+}
+SendAE.prototype.length = function ()
+{
+  var head = GM_getValue(this.tag+':head',0);
+  var tail = GM_getValue(this.tag+':tail',0);
+  return (tail - head);
+}
+SendAE.prototype.isEmpty = function ()
+{
+  if (this.length()) {
+    return false;
+  }
+  return true;
+}
+SendAE.prototype.allAreEmpty = function()
+{
+  var total = 0;
+  this.eachInLine(function(q) {
+    total += q.length();
+  });
+  logTrace({All_Q_total: total});
+  if (total == 0) {
+    return true;
+  }
+  return false;
+}
+SendAE.prototype.hasPending = function()
+{
+  var tag = this.tag;
+  var pending = GM_getValue(tag+':pending',pending, 0);
+  if (pending > 0) {
+    return true;
+  }
+  return false;
+}
+SendAE.prototype.noneHavePending = function()
+{
+  var total = 0;
+  this.eachInLine(function(q) {
+    if (q.hasPending()) total++;
+  });
+  logTrace({Num_Qs_pending: total});
+}
+
+
 /*
 sendQ.watch('items', function(id, oldval, newval) {
   console.log('sendQ.' + id + ' changed from ' + oldval + ' to ' + newval);
@@ -2727,146 +3213,6 @@ sendQ.watch('items', function(id, oldval, newval) {
   return newval;
 });
 */
-
-var alarm;
-this.isSending = function()
-{
-  var tag = 'sendQ:'+ getTabID();
-  var waitfor = GM_getValue(tag+':waitFor', null);
-  if (waitfor != null) {
-    console.log('waitfor: '+waitfor);
-    return true;
-  }
-  return false;
-}
-function sendQueued(ctx)
-{
-  var tag = 'sendQ:'+ getTabID();
-  if (sendQ.length() <= 0) {
-    if (alarm != null) {
-      window.clearTimeout(alarm);
-      console.log('cleared timeout');
-    }
-    console.log('returning from sendQueued urls:'+sendQ.length());
-    return;
-  }
-  //return if we havent passed wait time
-  if ((new Date().getTime()) < parseInt(GM_getValue(tag+':waitFor', '0'))) {
-    console.log('sendQ called prematurely urls:'+sendQ.length());
-    return;
-  }
-
-//  if (!isSending()) {
-    //  nice to have a cancel button
-    //
-      $( '#btnSendQCancel' ).show();
-//  }
-
-  //set a wait time in the future
-  var min = 500, max = 3000;
-  var waitMS = Math.floor(Math.random() * (max - min)) + min;
-  console.log('setting wait '+waitMS+ ' for '+tag + ' len '+sendQ.length());
-  GM_setValue(tag+':waitFor', (new Date().getTime()) + waitMS);
-
-  //    console.log('urls:'+sendQ.length);
-  //  console.log(' items pre shift '+sendQ.items);
-  var sqCtx = sendQ.shift();
-//  assertHas(sqCtx, {url: "string", msg: "string"});
-
-  //  console.log('tuple '+tuple);
-  //  console.log(' items post shift '+sendQ.items);
-
-  consoleMsg(sqCtx.msg);
-
-  console.log('send get for '+sqCtx.url + ' msg '+sqCtx.msg);
-
-  GM_xmlhttpRequest({
-    method: 'GET',
-    url: sqCtx.url,
-    timeout: 15000,
-    ontimeout: function(response) {
-      console.log("ontimeout :"+response);
-      consoleMsg("ae server timeout", "errMsg");
-      ctxQueueGet(sqCtx);
-    },
-    onerror: function(response) {
-      console.log("onerror :"+response);
-    },
-    onload: function(resp) {
-
-        sqCtx.html = resp.responseText;
-        sqCtx = ctxResponseDoc(sqCtx);
-
-        //  every queue item can have its own onload callback
-        // 
-        try {
-          assertHas(sqCtx, {onload: "string"});
-
-          aegis[sqCtx.onload](sqCtx);
-
-        } catch(e) {
-          //no onload function (or an error with it)
-//          console.log(e);
-        }
-
-        if (sendQ.length() > 0) {
-          var waitMS = 100;
-          var nextTime = parseInt(GM_getValue(tag+':waitFor', '0'));
-          var now = (new Date().getTime());
-          if (nextTime > now) {
-            waitMS = waitMS + (nextTime - now);
-          }
-
-          //call again after wait time
-          alarm = window.setTimeout( function() { sendQueued(ctx); }, waitMS);
-
-        } else {
-          $('#btnSendQCancel').remove();
-
-          GM_deleteValue(tag+':waitFor');
-
-          if (!ctx.doneMsg) {
-            consoleMsg("empty send queue", "noticeMsg");
-          } else {
-            consoleMsg(ctx.doneMsg, "infoMsg");
-            if (ctx.doneMsg.match(/completed scan/)) {
-              document.title = ">" + document.title;
-            }
-          }
-
-          if (typeof ctx.chainID != "undefined") {
-            ctxChainNext(ctx);
-          }
-
-        }
-      }  
-  });
-}
-
-RegExp.quote = function(str) {
-  return str.replace(/([.?*+^$[\]\\(){}|-])/g, "\\$1");
-};
-
-this.ctxQueueGet = function(ctx)
-{
-  assertHas(ctx, {url: "string", msg: "string"});
-
-  var re = new RegExp(RegExp.quote(serverURL));
-
-  if (!ctx.url.match(re)) {
-    ctx.url = serverURL + "/" + ctx.url;
-  }
-
-  //  unless specified, user wants ctxDispatch as onload callback
-  //
-  try {
-    assertHas(ctx, {onload: "string"});
-  } catch(e) {
-    ctx.onload = "ctxDispatchResponse";
-  }
-  sendQ.push(ctx);
-
-}
 
 this.scanRegion = function(ctx)
 {
@@ -2879,30 +3225,47 @@ this.scanRegion = function(ctx)
     return;
   }
 
+  //  debug
+  /*
+  var keys = GM_listValues();
+  $.each(keys, function (key, value) {
+      GM_deleteValue(key);
+  });
+  for each (var key in GM_listValues()) {
+    if (key.match(/^sendQ:/)) {
+      GM_deleteValue(key);
+    }
+  }
+  logTrace();
+  */
+
   systems = GM_getValue("starMap:"+region);
 
   if (!exists(systems)) {
     var gal = region.match(/[A-Za-z][0-9]{2}/)[0];
     getGalaxyXML({galaxy: gal, callback: (function(region) { 
-      return function() { scanRegion({region: region}); }
+      return function() { scanRegion(ctx); }
     })(region)
     });
     return;
   }
   consoleMsg("scanning region "+region,"infoMsg");
+  log('scanning region', region);
 
-  consoleMsg("chain: "+ctx.chainID)
+  if (typeof ctx.sendQ === "undefined") {
+    ctx.doneMsg = "completed scan of "+region;
+    ctx.sendQ = new SendAE(ctx);
+
+    logTrace(ctx.sendQ);
+  }
+
+//  consoleMsg("chain: "+ctx.chainID)
 
   var system = systems.split(":");
   for (var i = 0; i < system.length; i++)
   {
     var loc = region + ":" + system[i];
-    ctxQueueGet({url: "map.aspx?loc="+loc, msg: "scanning system "+loc});
-  }
-
-  if (typeof ctx.skipSend == "undefined") {
-    ctx.doneMsg = "completed scan of "+region;
-    sendQueued(ctx);
+    ctx.sendQ.push({url: "map.aspx?loc="+loc, msg: "scanning system "+loc});
   }
 
   //  unsafeWindow.starsJS.watch(0, function () {
@@ -2939,7 +3302,7 @@ this.ctxLoadDispatch = function(ctx)
 
 this.ctxDispatchResponse = function(ctx)
 {
-
+  logTrace();
   try {
     assertHas(ctx, {doc: "object"});
   } catch(e) { 
@@ -2982,14 +3345,22 @@ function dispatch(ctx) {
 
   ctx.url = decodeURIComponent(ctx.url);
   ctx.route = aegisURLstore;
-  ctx.follow = "none";
+
+  if (typeof ctx.follow === "undefined") 
+    ctx.follow = "none";
+
+  if (typeof ctx.sendQ === "undefined")
+    ctx.sendQ = new SendAE();
+
+  if (!ctx.sendQ.allAreEmpty()) 
+    ctx.sendQ.waitFor();
 
   console.log('dispatching '+ctx.url );
   if (ctx.url.match(/(.+?)astroempires.com/)) {
     serverTime = ctx.doc.getElementById('server-time').getAttribute('title');
 
-    console.log('dispatch server '+server+' playerID '+playerID + ' time '+serverTime);
-    console.log("fleet_ch1 "+GM_getValue("moveFleet:fleet_ch1:"+playerID, null));
+    logTrace('dispatch server '+server+' playerID '+playerID + ' time '+serverTime);
+//    console.log("fleet_ch1 "+GM_getValue("moveFleet:fleet_ch1:"+playerID, null));
   } else {
     return;
   }
@@ -3140,23 +3511,18 @@ function CurrentServerTime()
 
 this.doit = function() {
   consoleClear();
-  consoleMsg('doin it')
-//  var key = keys[0];
-//  for (var i=0; key != null; key=keys[i++] ) {
-  var keys = GM_listValues();
-  keys.forEach(function(el, i ,a) {
-    if (el.match(/^ctxChain:/)) {
-      GM_deleteValue(el);
-    }
-  });
-  console.log('cleared chains', GM_getValue("ctxChain:next"));
+  consoleMsg('doin it');
 
-  var m = $('#curGalReg').html().match(/[A-Za-z][0-9]{2}/);
+//  var m = $('#curGalReg').html().match(/[A-Za-z][0-9]{2}/);
+  var m = $("#moveScoutFrom").val().match(/[A-Za-z][0-9]{2}/);
 
   consoleMsg('scouting galaxy '+m[0]);
 
   if (m.length) {
-    ctxSendToServer({data:{func:"scoutGalaxy", ctx: {galaxy: m[0], scouts: 10, start: $("#moveScoutFrom").val()}}, 
+    ctxSendToServer({data:
+      {func:"scoutGalaxy", 
+        ctx: {galaxy: m[0], scouts: 10, skipX: 0, skipY: 1, start: $("#moveScoutFrom").val()}
+      },
       route:aegisURLquery, ondispatch:"ctxQueryResponse"}); 
   } else {
     consoleMsg('no galaxy selected', 'errMsg');
@@ -3175,25 +3541,37 @@ this.ctxRunCmd = function(ctx)
   var cmdCtx = ctx.ctx;
   cmdCtx.chainID = ctx.chainID;
 
+  logTrace(cmdCtx);
+
 /*
   if (tryAssertHas(cmdCtx, {msg: "string"}), 1) {
     consoleMsg('get '+cmdCtx.msg);
   } else {
   */
-    consoleMsg("processing command:<br>&nbsp;&nbsp;"+cmd + "("+ cmdCtx + ")");
+/*    consoleMsg("processing command:<br>&nbsp;&nbsp;"+cmd + "(", toString(cmdCtx), ")");
     for (i in cmdCtx) {
       consoleMsg(i + ": " +cmdCtx[i]);
     }
+    */
 //  }
 
   try {
-    ctxCmd = aegis[cmd](cmdCtx);
+    cmdCtx = aegis[cmd](cmdCtx);
   } catch(e) {
     consoleMsg(e.message + "<br>"+cmd+"<br>"+e.shortstack().join("\n&nbsp;&nbsp;"), "errMsg");
-    ctxCmd.error = e.message;
+    cmdCtx.error = e.message;
   }
-  return ctxCmd;
+  return cmdCtx;
 
+}
+
+this.querySQ;
+this.ctxQueueGet = function(ctx) {
+  if (!hasValidArgs(ctx, {url: "string"})) return;
+  if (aegis.querySQ == null) {
+    aegis.querySQ = new SendAE({doneMsg: "Query Done"});
+  }
+  aegis.querySQ.push(ctx);
 }
 
 //  handle a response from a server query
@@ -3201,7 +3579,10 @@ this.ctxRunCmd = function(ctx)
 this.ctxQueryResponse = function(ctx)
 {
   logTrace();
-  if (tryAssertHas(ctx, {response: "object"}, 1)) {
+  if (aegis.querySQ == null) {
+    querySQ = new SendAE({doneMsg: "Query Done"});
+  }
+  if (tryAssertHas(ctx, {response: "object"})) {
     logTrace("response");
     console.log(ctx);
 
@@ -3210,7 +3591,7 @@ this.ctxQueryResponse = function(ctx)
     }
 
   }
-  if (tryAssertHas(ctx, {command: "object"}, 1)) {
+  if (tryAssertHas(ctx, {command: "object"})) {
     logTrace("command");
     console.log(ctx);
 
@@ -3224,19 +3605,13 @@ this.ctxQueryResponse = function(ctx)
 
     ctxRunCmd(cmdCtx);
 
-    if (cmdCtx.func == "ctxQueueGet" && (! isSending())
-          && typeof ctx.inBatch == "undefined") {
-
-      consoleMsg('svr command send queued');
-      ctx.doneMsg = "svr command done";
-//      sendQueued(ctx);
-    }
-
   }
 
-  if (tryAssertHas(ctx, {batch: "object"}, 1)) {
+  if (tryAssertHas(ctx, {batch: "object"})) {
     logTrace("batch");
     console.log(ctx);
+
+//    ctx.sendQ = new SendAE();
     ctx.batch.forEach(function(el, i , a) {
       logTrace(el);
       el.inBatch = 1;
@@ -3245,10 +3620,10 @@ this.ctxQueryResponse = function(ctx)
     });
     ctx.doneMsg = "batch done";
     consoleMsg('send queued');
-    sendQueued(ctx);
+//    ctx.sendQ.start();
   }
 
-  if (tryAssertHas(ctx, {chain: "object"}, 1)) {
+  if (tryAssertHas(ctx, {chain: "object"})) {
     logTrace("queryResponse: chain");
     console.log(ctx);
 
@@ -3291,7 +3666,7 @@ $(document).ready(function() {
     .draggable()
     .appendTo('body');
   */
-  dispatch({url: document.URL, doc: document, follow: "all"});
+  dispatch({url: document.URL, doc: document, follow: "none"});
 
   log('load');
   
@@ -3315,7 +3690,8 @@ if (document.location.href.match(/(.+?)astroempires.com/)) {
   localTimeZoneOffset = dStartTime.getTimezoneOffset();
   mLocalStartTime = moment(dStartTime);
   console.log("Server Time: "+mServerTime.format('YYYY/MM/DD HH:mm:ss'));
-  console.log("Local Time: "+mLocalStartTime.format('YYYY/MM/DD HH:mm:ss')
+  console.log("Local Time: "
+      +mLocalStartTime.format('YYYY/MM/DD HH:mm:ss')
       + " tz offset:" + localTimeZoneOffset);
 }
 
@@ -3325,3 +3701,4 @@ doResources();
 setTabName();
 
 console.log("aegis loaded successfully");
+

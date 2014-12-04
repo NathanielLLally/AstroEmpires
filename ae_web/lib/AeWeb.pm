@@ -27,11 +27,8 @@ sub startup {
 
   # Normal route to controller
   $r->any('/ae')->to(controller => 'main', action => 'index');
-  $r->get('/ae/gis')->to(controller => 'main', action => 'index');
-  $r->any('/ae/gis/displayView/:view')->to(controller => 'main', action => 'displayView');
-  $r->any('/ae/gis/displayProc/:proc')->to(controller => 'main', action => 'displayProc');
-  $r->any('/ae/gis/displayOldProc/:proc')->to(controller => 'main', action => 'displayOldProc');
-  $r->any('/ae/gis/displayData/:tag')->to(controller => 'main', action => 'displayData');
+  $r->get('/ae/gis')->to('main#index');
+  $r->get('/ae/gis/data/:proc')->to('Ajax::DBIx#dbic');
   $r->post('/ae/login')->to(controller => 'main', action => 'login');
   $r->post('/ae/updatePassword')->to(controller => 'main', action => 'updatePassword');
   $r->post('/ae/select/server')->to(controller => 'main', action => 'select');

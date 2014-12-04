@@ -29,12 +29,16 @@ sub scoutGalaxy
   my %ret;
   $ret{ctx} = $ctx;
   $ctx->{galaxy} =~ /^$reLoc$/;
-  my $a = $ctx->{scouts};
+  my $scouts = $ctx->{scouts};
+  my $skipY = $ctx->{skipY} || 0;
+  my $skipX = $ctx->{skipX} || 0;
   my $start = $ctx->{start};
 
   my $r = $s->orderRegions($ctx);
   my @queues;
 
+  #  
+  #
   foreach my $el (@{ $r->{batch}}) {
     my ($err,$astro);
     $astro = $el->{response}->{randomAstro};
@@ -43,15 +47,21 @@ sub scoutGalaxy
     }
     $astro =~ /$reLoc/;
     my ($y, $x) = (split('',$+{region}));
+
     push @{ $queues[$x] }, $astro;
 
   }
-  #$s->app->log->debug(Dumper(@queues));
+#  $s->app->log->debug(Dumper(@queues));
 
-  foreach my $q (@queues) {
+  for (my $i = $skipX; $i < $#queues, $i < ($scouts + $skipX); $i++) {
+    my $q = $queues[$i];
     my @chain;
     my $last = $start;
-    foreach my $next (@$q) {
+
+#    $s->app->log->debug('hmmmm');
+#    $s->app->log->debug(Dumper(@$q));
+    for (my $j = $skipY; $j <= $#{$q}; $j++) {
+      my $next = $q->[$j];
       push @chain, {func => 'ctxMoveScout', 
         ctx => {origin => $last, destination => $next}};
       push @chain, {func => 'scanRegion', ctx => {region => $next}};
@@ -61,10 +71,15 @@ sub scoutGalaxy
       ctx => {origin => $last, destination => $start}};
     push @{$ret{chain}}, \@chain;
 
+    if ($i >= $scouts) {
+      return \%ret;
+    }
   }
   return \%ret;
 }
 
+# order random astros in each region into one array
+#
 sub orderRegions
 {
   my ($s, $ctx) = @_;
@@ -89,13 +104,17 @@ sub orderRegions
     foreach my $reg (@regions) {
       push @{ $r{batch} }, $s->randomAstro({ randomAstro => sprintf("%s:%s", $galaxy, $reg)});
     }
-  #  $s->app->log->debug(Dumper(\%r));
+#    $s->app->log->debug(Dumper(\%r));
   } else {
     $s->app->log->debug("wtf is this? ".Dumper($ctx));
   }
   return (\%r);
 }
 
+#  given a region, return a random astro to land a scout on
+#  if not able, return a batch of ctxQueueGet's for systems to
+#  scan
+#
 sub randomAstro
 {
   my ($s, $ctx) = @_;
@@ -127,7 +146,7 @@ sub randomAstro
       if ($#rs >= 0) {
         my $system = $rs[int(rand($#rs + 1))]->starLoc;
         $r{command} = {func => 'ctxQueueGet', 
-          ctx => {url => "map.aspx?loc=$system", msg => "obtaining $system", follow => 0}
+          ctx => {url => "map.aspx?loc=$system", msg => "obtaining $system", follow => "none"}
         };
       } else {
 # not even in RegionStars? ask for the galaxy xml

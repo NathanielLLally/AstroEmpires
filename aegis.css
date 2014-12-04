@@ -176,7 +176,6 @@
 
 .aegisConsole-Container {
   position: absolute;
-//  position: relative;
   top: 7px;
   left: 7px;
   width: 200px;
@@ -219,7 +218,7 @@
   left: 7px;
   padding-left: 4px;
   width: 196px;
-  height: 52em;
+  height: 45em;
   margin-bottom: 0px;
   padding-bottom: 0px;
   overflow-y: scroll;
@@ -230,7 +229,7 @@
 }
 
 .aegisConsole-small {
-  height: 12em;
+  height: 16em;
 }
 
 .aegisToolbox

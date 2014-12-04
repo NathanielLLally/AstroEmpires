@@ -145,9 +145,16 @@ Related object: L<AeWeb::Schema::Result::FleetShips>
 =cut
 
 __PACKAGE__->has_many(
-  "fleet_ships",
+  "fleetShips",
   "AeWeb::Schema::Result::FleetShips",
   { "foreign.id" => "self.id" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+
+__PACKAGE__->has_one(
+  "owner",
+  "AeWeb::Schema::Result::Player",
+  { "foreign.id" => "self.owner" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
 

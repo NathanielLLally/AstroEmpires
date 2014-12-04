@@ -13,7 +13,8 @@ AeWeb::Schema::Result::BaseDetail
 use strict;
 use warnings;
 
-use base 'DBIx::Class::Core';
+#use base 'DBIx::Class::Core';
+use base 'AeWeb::Schema::Result';
 
 =head1 COMPONENTS LOADED
 
@@ -115,6 +116,8 @@ __PACKAGE__->add_columns(
 
 __PACKAGE__->set_primary_key("id", "guildTag");
 
+
+
 =head1 RELATIONS
 
 =head2 
@@ -126,7 +129,7 @@ Related object: L<AeWeb::Schema::Result::Base>
 =cut
 
 __PACKAGE__->belongs_to(
-  "",
+  "base",
   "AeWeb::Schema::Result::Base",
   { id => "id" },
   { is_deferrable => 1, on_delete => "CASCADE", on_update => "CASCADE" },

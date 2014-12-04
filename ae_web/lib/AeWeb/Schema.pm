@@ -11,7 +11,12 @@ use base 'DBIx::Class::Schema';
 #use DBIx::Connector;
 #use DBIx::QueryByName::Logger;
 
-__PACKAGE__->load_namespaces;
+__PACKAGE__->load_namespaces(
+  result_namespace => 'Result',
+  resultset_namespace => 'ResultSet',
+  default_resultset_class => 'ResultSet',
+);
+
 
 
 =pod

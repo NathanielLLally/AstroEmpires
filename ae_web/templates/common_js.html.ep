@@ -1,3 +1,0 @@
-%= javascript '/js/libs/jquery-1.7.1.min.js'
-%= javascript '/js/libs/jquery.leanModal.min.js'
-%= javascript '/js/jquery.dataTables.js'

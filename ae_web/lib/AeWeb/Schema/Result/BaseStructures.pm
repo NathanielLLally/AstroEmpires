@@ -113,7 +113,7 @@ Related object: L<AeWeb::Schema::Result::Base>
 =cut
 
 __PACKAGE__->belongs_to(
-  "",
+  "base",
   "AeWeb::Schema::Result::Base",
   { id => "id" },
   { is_deferrable => 1, on_delete => "CASCADE", on_update => "CASCADE" },

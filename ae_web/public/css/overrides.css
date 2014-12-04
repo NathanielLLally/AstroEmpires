@@ -17,6 +17,7 @@ body {
 .toggle-vis
 {
   cursor: pointer;
+  margin-right: 6px;
 }
 
 a.toggle-vis:hover

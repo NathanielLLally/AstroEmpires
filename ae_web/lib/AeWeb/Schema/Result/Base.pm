@@ -12,8 +12,7 @@ AeWeb::Schema::Result::Base
 
 use strict;
 use warnings;
-
-use base 'DBIx::Class::Core';
+use base 'AeWeb::Schema::Result';
 
 =head1 COMPONENTS LOADED
 
@@ -116,12 +115,29 @@ Related object: L<AeWeb::Schema::Result::BaseDetail>
 
 =cut
 
-__PACKAGE__->has_many(
-  "base_details",
-  "AeWeb::Schema::Result::BaseDetail",
-  { "foreign.id" => "self.id" },
+__PACKAGE__->has_one(
+  "owner",
+  "AeWeb::Schema::Result::Player",
+  { "foreign.id" => "self.owner" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
+
+__PACKAGE__->might_have(
+  "occupier",
+  "AeWeb::Schema::Result::Player",
+  { "foreign.id" => "self.occupier" },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+
+
+__PACKAGE__->might_have(
+  "baseDetail",
+  "AeWeb::Schema::Result::BaseDetail",
+  { "foreign.id" => "self.id" },
+#  , 'foreign.guildTag' => 'self.guildTag' },
+  { cascade_copy => 0, cascade_delete => 0 },
+);
+
 
 =head2 base_structures
 
@@ -132,7 +148,7 @@ Related object: L<AeWeb::Schema::Result::BaseStructures>
 =cut
 
 __PACKAGE__->has_many(
-  "base_structures",
+  "baseStructures",
   "AeWeb::Schema::Result::BaseStructures",
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },

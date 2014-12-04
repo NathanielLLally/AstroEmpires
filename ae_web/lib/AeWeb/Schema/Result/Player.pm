@@ -121,8 +121,8 @@ Related object: L<AeWeb::Schema::Result::PlayerUsage>
 =cut
 
 __PACKAGE__->has_many(
-  "player_usage",
-  "AeWeb::Schema::Result::Player_Usage",
+  "playerUsage",
+  "AeWeb::Schema::Result::PlayerUsage",
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );

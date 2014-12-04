@@ -8,6 +8,10 @@ em {
 .section-lt { position: relative; float: left; width: 304px;  }
 .section-rt { position: relative; float: right; width: 304px; }
 
+.toolbar {
+  float: left;
+}
+
 .box { background: #CC0033; background: rgba(100, 0, 140, 0.7);
  padding: 8px;
  border-radius: 5px; -moz-border-radius: 5px; -webkit-border-radius: 5px; }
