@@ -46,10 +46,11 @@ sub with_occupier
 {
   my $s = shift;
   $s->search(undef, {
-    join => ['occupier'],
+    join => [qw/occupier baseDetail/],
     '+columns' => [
       {"occupierTag" => "occupier.guildTag"},
       { "occupier" => "occupier.name" },
+        ( { 'occupierIncome' => \" baseDetail.economy - round(baseDetail.economy * (0.01 * baseDetail.ownerIncome), 0) as occupierIncome" } ),
     ],
   });
 }
@@ -75,6 +76,35 @@ sub with_detail
 # $source->related_source($rel)->resultset
 #
 
+  my $source = $s->result_source->related_source('baseDetail')->resultset;
+
+  $s->search({
+       'baseDetail.time' => { '=' => $source->search(
+          {
+            id => { -ident => $s->current_source_alias . '.id' },
+          },
+          {
+            columns  => [ {
+              mtime => { max => 'latestDetail.time' },
+              id => 'latestDetail.id',
+              } ],
+            group_by  => ['id'],
+            alias => 'latestDetail'
+          })->get_column('mtime')->as_query },
+  },{
+      join => [qw/baseDetail/],
+      '+columns' => [
+        (map
+         { +{ "$_" => "baseDetail.$_" } }
+         grep { $_ !~ /^(id|guildTag|time)$/ }
+         $source->result_source->columns
+        ),
+#        $source->with_occupier_income,
+#        $s->related_resultset('baseDetail')->with_occupier_income,
+      ]
+  });
+
+=pod
   $s->search({
       'baseDetail.time' => { '=' => $s->correlate('baseDetail')->get_column('time')->max_rs->as_query
       },
@@ -88,6 +118,7 @@ sub with_detail
            $s->related_resultset('baseDetail')->result_source->columns
           )],
     });
+=cut
 }
 
 sub with_defenses
@@ -103,16 +134,14 @@ sub pivot_structures
   if (ref($name[0]) eq 'ARRAY') {
     @name = @{ $name[0] };
   }
-  $s->search({
-      -or => [
-          (map { +{ 'baseStructures.name' => "$_" } } @name)
-        ]
-    },{
+#  $s->display();
+  $s->search(undef, {
       join => [qw/baseStructures/],
       '+columns' => [
-        (map { +{ "$_" => \[ 'IF (baseStructures.name = ?, baseStructures.number, NULL)', $_ ] } } @name)
+        (map { +{ "$_" => \"sum( if ( baseStructures.name = '$_', baseStructures.number, NULL ))" } } @name),
       ],
-    });
+      group_by => ['baseStructures.id'],
+   });
 }
 
 sub with_structures
@@ -135,14 +164,15 @@ sub latest
   $s->search({
     $s->current_source_alias . '.time' => { '=' => $s->search(
       {
-        id => { -ident => $s->current_source_alias . '.id' },
+        location => { -ident => $s->current_source_alias . '.location' },
       },
       {
         columns  => [ { 
           mtime => { max => 'time' },
-            id => 'id',
+          location => 'location',
+          id => 'id',
           } ],
-        group_by  => ['id'],
+        group_by => 'location',
         alias => 'latestBase'
       })->get_column('mtime')->as_query },
     });

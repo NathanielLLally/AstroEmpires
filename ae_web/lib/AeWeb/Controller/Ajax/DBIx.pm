@@ -3,6 +3,7 @@ use AeWeb::Schema;
 use MooseX::Params::Validate;
 use Mojo::Base 'Mojolicious::Controller';
 use Mojo::Util qw/dumper/;
+use DateTime;
 
 use base 'AeWeb::Controller::Ajax';
 
@@ -10,19 +11,25 @@ sub Astros {
   my $s = shift;
   my $schema =  $s->schema;
 
-  my $rs = $schema->resultset('Astro')->search(
+  my $rs = $schema->resultset('Astro');
+  my $me = $rs->current_source_alias;
+  $rs->search(
     {
       -and => [
-        location => { like => "B39%" },
+        "$me.location" => { regexp => '^C00.*:[12].$'},
+        'base.location' => undef,
         -or      => [
           type => 'Planet',
           type => 'Moon',
           type => 'Asteroid',
         ],
+        terrain => 'Rocky'
       ],
     },
+    {
+      join => ['base']
+    }
   );
-  return $rs;
 }
 
 sub Test {
@@ -62,10 +69,9 @@ sub AllBases {
   $schema->resultset('Base')
     ->strip
     ->latest
-  
-#    ->with_detail
-#    ->with_owner
-#    ->with_occupier
+    ->with_detail
+    ->with_owner
+    ->with_occupier
 }
 
 =pod
@@ -107,22 +113,31 @@ CREATE PROCEDURE pFleet (IN PguildTag VARCHAR(20))
 
 =cut
 
+sub MyFleet
+{
+  my $s = shift;
+  my $schema =  $s->schema;
+  my $rs = $schema->resultset('Fleet')->search({
+    owner => $s->session('playerID'),
+  })
+    ->strip
+    ->with_owner;
+
+
+  $rs;
+}
+
 sub Fleet
 {
   my $s = shift;
   my $schema =  $s->schema;
-  my $rs = $schema->resultset('Fleet')->search(
-    {},
-    {
-      join => [qw/owner fleetShips/],
-      columns => [qw/ time size location owner.guildTag owner.nate arrival/],
-      collapse => 1,
-    },
-  );
-  return $rs;
+  $schema->resultset('Fleet')->search({})
+    ->strip
+    ->with_owner
+    
 }
 
-sub MyBase1
+sub MyBase
 {
   my $s = shift;
   my $schema = $s->schema;
@@ -135,10 +150,10 @@ sub MyBase1
     ->with_detail
     ->with_owner
     ->with_occupier
-    ->pivot_structures(['Command Centers', 'Jump Gate']);
+#    ->pivot_structures(['Command Centers', 'Jump Gate']);
 }
 
-sub MyBase
+sub myBase
 {
   my $s = shift;
   my $schema =  $s->schema;

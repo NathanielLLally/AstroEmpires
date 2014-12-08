@@ -27,7 +27,7 @@ use base 'DBIx::Class::Core';
 
 =cut
 
-__PACKAGE__->load_components("InflateColumn::DateTime", "TimeStamp");
+__PACKAGE__->load_components('FilterColumn', "InflateColumn::DateTime", "TimeStamp");
 
 =head1 TABLE: C<fleet>
 
@@ -157,6 +157,10 @@ __PACKAGE__->has_one(
   { "foreign.id" => "self.owner" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
+
+__PACKAGE__->filter_column( location => {
+    filter_from_storage => 'to_href_map',
+    });
 
 
 # Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11

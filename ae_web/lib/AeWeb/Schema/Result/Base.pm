@@ -26,7 +26,7 @@ use base 'AeWeb::Schema::Result';
 
 =cut
 
-__PACKAGE__->load_components("InflateColumn::DateTime", "TimeStamp");
+__PACKAGE__->load_components('FilterColumn', "InflateColumn::DateTime", "TimeStamp");
 
 =head1 TABLE: C<base>
 
@@ -105,8 +105,6 @@ __PACKAGE__->add_columns(
 
 __PACKAGE__->set_primary_key("id", "guildTag");
 
-=head1 RELATIONS
-
 =head2 base_details
 
 Type: has_many
@@ -153,6 +151,12 @@ __PACKAGE__->has_many(
   { "foreign.id" => "self.id" },
   { cascade_copy => 0, cascade_delete => 0 },
 );
+
+__PACKAGE__->filter_column( location => {
+    filter_from_storage => 'to_href_map',
+    });
+
+=head1 RELATIONS
 
 
 # Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11

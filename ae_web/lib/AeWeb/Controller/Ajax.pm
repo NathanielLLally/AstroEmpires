@@ -63,6 +63,7 @@ sub dbic {
     return;
   }
   $s->schema($s->session('server'));
+  $AeWeb::Schema::Result::ServerURL = $s->session('server') . '.astroempires.com';
 
   my ($rs, @headers, @data, %opt) = (undef, (), (), ());
   my $proc = $s->stash('proc');
@@ -126,26 +127,32 @@ sub dbic {
 #  $rs = $s->Test({ searchOptions => \%opt });
 
   my $json = {};
+
+  
   if ( $rs != 0 ) {
     my $row;
 #
-#  json request
+#  json request performed by DataTable.js
 #
     if ( exists $opt{page} ) {
+
       $rs = $rs->search(undef, \%opt);
 
 #      my $view = $rs->display;
-      my $view = $rs->rando;
-      $s->app->log->debug(dumper $view);
+      if (1) {
+        my $view = $rs->display;
+        $s->app->log->debug(dumper $view);
+      }
 
       @headers = @{ $s->session('headers') };
       #  fropm DBIX to Ajax format
       #
       foreach my $row ($rs->page($opt{page})->all) {
-        push @data, [ map { $row->get_column($_) } @headers ];
+        my %inflated = $row->get_inflated_columns;
+        push @data, [ map { $inflated{$_} } @headers ];
       }
 
-#  request from html request
+#  html request that sets up DataTabe.js with headers
 #
     } else {
       $row = $rs->next;
@@ -163,8 +170,10 @@ sub dbic {
 #
 #      @headers = grep { exists $cols{$_} } $rs->result_source->columns;
 #      @headers = keys %cols;
-      $s->app->log->debug( dumper( \@headers ) );
-      $s->app->log->debug( dumper( \@fields ) );
+      if (defined $s->param('dumpHeaders')) {
+          $s->app->log->debug( dumper( \@headers ) );
+          $s->app->log->debug( dumper( \@fields ) );
+      }
       $s->session( headers => \@headers, );
       $s->session( fields => \@fields, );
 

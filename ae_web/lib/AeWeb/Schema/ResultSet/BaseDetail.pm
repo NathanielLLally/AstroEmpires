@@ -3,12 +3,18 @@ package AeWeb::Schema::ResultSet::BaseDetail;
 use Moose;
 extends 'AeWeb::Schema::ResultSet';
 
-sub hi
+sub with_occupier_income
 {
   my $s = shift;
-  open(OUT, ">/tmp/out");
-  print OUT "hi there\n";
-  close OUT;
+  my $me = $s->current_source_alias;
+  $s->search({
+  }, {
+    '+columns' => [
+        ( { 'occupierIncome' => \" (baseDetail.economy * (0.01 * baseDetail.ownerIncome)) as occupierIncome" },
+        ),
+    ],
+    alias => 'baseDetail',
+  });
 }
 
 sub latest
@@ -23,12 +29,12 @@ sub latest
       {
         columns => [
           {id => "latestDetail.id"},
-          {mtime => { max => "latestDetail.time" }},
+          {mdtime => { max => "latestDetail.time" }},
           ],
         group_by => ['id'],
         alias => 'latestDetail',
       }
-      )->get_column('mtime')->as_query },
+      )->get_column('mdtime')->as_query },
     });
 }
 

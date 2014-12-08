@@ -119,7 +119,25 @@ __PACKAGE__->belongs_to(
   { is_deferrable => 1, on_delete => "CASCADE", on_update => "CASCADE" },
 );
 
+=pod
+my $source = __PACKAGE__->result_source_instance();
+my $new_source = $source->new( $source );
+$new_source->source_name( 'BaseStructuresPivot' );
+# Hand in your query as a scalar reference
+         # It will be added as a sub-select after FROM,
+         # so pay attention to the surrounding brackets!
+         $new_source->name( \<<SQL );
+         ( SELECT u.* FROM user u
+         INNER JOIN user_friends f ON u.id = f.user_id
+         WHERE f.friend_user_id = ?
+         UNION
+         SELECT u.* FROM user u
+         INNER JOIN user_friends f ON u.id = f.friend_user_id
+         WHERE f.user_id = ? )
+         SQL
 
+
+=cut
 # Created by DBIx::Class::Schema::Loader v0.07042 @ 2014-11-12 12:58:11
 # DO NOT MODIFY THIS OR ANYTHING ABOVE! md5sum:L2TfwLtMMBTHJYSw8cozcw
 
