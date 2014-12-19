@@ -12,7 +12,7 @@
 // @exclude     *.astroempires.com/
 // @exclude     *.astroempires.com/login.aspx*
 // @exclude     *.astroempires.com/home.aspx
-// @version     1.3
+// @version     1.4
 // @grant       GM_xmlhttpRequest
 // @grant       GM_log
 // @grant       GM_setValue
@@ -25,15 +25,36 @@
 // @grant       GM_openInTab
 // ==/UserScript==
 
-/* TODO:
+/* TODO/Ideas:
+ *
+ * *scan fleet systems*
+ *   -show fleets probably attacking
  *
  *
  *
- *  follow settings for empire -> base or empire -> system -> fleet
- *    then put some minimum time on empire
+ * segregate SendAE queues by tabID & test
+ * tagWait by server- test scan region w/ two tabs on two different servers
  *
- * event system ideas
- *   register 
+ * bug: refresh on tab2 messes with tab1 scan
+ *
+ * scanGalaxy progress output
+ *   ideas: tack on a new tr/td to table after document.location.href = fleet.aspx
+ *   parsing dom within current dom bypasses scripts & css
+ *
+ * ability to switch browsers and maintain chained commands
+ *   chainCmd store to server
+ *   attachToChain onload
+ *
+ * firefox addon/extention for cookie session id
+ *
+ * run aegis.user.js within node
+ *   wrap set/get/list Values with sqlite or berkleyDB
+ *   use with links as for frontend output?
+ *
+ * split codebase 
+ *   parse & dispatch
+ *   util
+ *   SendAE
  *
  */
 //boards ad
@@ -178,9 +199,9 @@ function assertHas(ctx, types) {
       window.name = "aegis"+id;
       GM_setValue("aegisTabID", id);
     }
+    console.log("tab name: "+window.name);
+    console.log('next tabID:'+GM_getValue("aegisTabID", 0));
   }
-  console.log("tab name: "+window.name);
-  console.log('next tabID:'+GM_getValue("aegisTabID", 0));
 })();
 
 function getTabID()
@@ -236,6 +257,7 @@ function checkForUpdate()
 function checkSendBufferCache()
 {
   var keys = GM_listValues();
+  if (keys == null) return;
 
   var key = keys[0];
   for (var i=0; key != null; key=keys[i++] ) {
@@ -452,78 +474,6 @@ function getElement(obj){
   return obj;
 }
 
-/*  toggle an objects visible style settings
- *    (display, visibility, and zIndex)
- *
- *  also, store them so that all tabs retain the same settings
- */
-function toggle (obj, displayType, state){
-  if (displayType == null || displayType == undefined)
-    displayType = "block";
-
-  obj = getElement(obj);
-
-  if (!obj)
-    return false;
-
-  if (state != null && state != undefined){
-    if (state) {
-      obj.style.display = displayType;
-      obj.style.zIndex = "999999";
-      obj.style.visibility = "visible";
-    } else {
-      obj.style.display = "none";
-      obj.style.visibility = "hidden";
-      obj.style.zIndex = "-999999";
-    }
-
-  }else{
-    if (!obj.style.display || obj.style.display == displayType) {
-
-      obj.style.display = "none";
-      obj.style.visibility = "hidden";
-      obj.style.zIndex = "-999999";
-    } else {
-      obj.style.display = displayType;
-      obj.style.visibility = "visible";
-      obj.style.zIndex = "999999";
-    }
-  }
-  GM_setValue("setting:style:display:" +obj.id, obj.style.display);
-  GM_setValue("setting:style:visibility:" +obj.id, obj.style.visibility);
-  GM_setValue("setting:style:zIndex:" +obj.id, obj.style.zIndex);
-}
-
-function show(obj, displayType){
-  toggle(obj, displayType, true);
-}
-
-function hide(obj, displayType){
-  toggle(obj, displayType, false);
-}
-
-function getScrollX(){
-  if (exists(window.pageXOffset))
-    return window.pageXOffset;
-  else if (exists(document.documentElement) && exists(document.documentElement.scrollLeft))
-    return document.documentElement.scrollLeft;
-  else if (exists(document.body.scrollLeft))
-    return document.body.scrollLeft;
-  else 
-    return 0;
-}
-
-function getScrollY(){
-  if (exists(window.pageYOffset))
-    return window.pageYOffset;
-  else if (exists(document.documentElement) && exists(document.documentElement.scrollTop))
-    return document.documentElement.scrollTop;
-  else if (exists(document.body.scrollTop))
-    return document.body.scrollTop;
-  else 
-    return 0;
-}
-
 function registerEvent(obj, event, callback, capture){
   if (!exists(obj) || !exists(event) || !exists(callback))
     return false;
@@ -593,6 +543,18 @@ function updateGalaxyRegion () {
   var t = window.setTimeout(updateGalaxyRegion, 500);
 }
 
+function clearMyFleet()
+{
+  /*
+    $.each(JSON.parse(GM_getValue("myfleetById", "[]")),
+        function(k, v) {
+          GM_deleteValue("myfleet:"+v);
+        });
+    GM_deleteValue("myfleetById");
+    GM_deleteValue("myfleetByLoc");
+    */
+}
+
 function myFleet(id)
 {
   return JSON.parse(GM_getValue("myfleet:"+id, {}));
@@ -609,7 +571,6 @@ function myFleetsTo(location)
   logTrace(location + " " + JSON.stringify(fleets));
   return fleets;
 }
-
 
 this.ctxChainCmd = function(ctx, cmd)
 {
@@ -1180,6 +1141,43 @@ this.ConsoleToolbox = function() {
           .attr({id:'btnCancel', class: 'aegisToolbox-button'})
           .html( ' Cancel ' )
           .click( function() {
+            ctx.sendQ.clear();
+            $( this ).remove();
+          })
+        .insertAfter( $( this ) );
+      })
+      .appendTo($tbxScan);
+
+    $( document.createElement('span') )
+      .attr('class', 'aegisToolbox-button')
+      .html( 'Scan Fleet Systems')
+      .click( function() {
+        document.title = 'Scan Fleet Systems';
+        var locs = JSON.parse(GM_getValue('myBases',"[]"));
+        var sendQ = new SendAE({doneMsg:"completed fleet systems scan"});
+
+        var myFleetByLoc = JSON.parse(GM_getValue('myfleetByLoc', '{}'));
+        locs.forEach(function(el,i,a) {
+          try {
+            delete myFleetByLoc[el];
+          } catch(e) {}
+        });
+        console.log(myFleetByLoc);
+        logTrace();
+        $.each(myFleetByLoc,
+          function (k, v) {
+            logTrace(k);
+              var loc = matchFirstPos(k, /([A-Za-z][0-9]{2}:[0-9]{2}:[0-9]{2})/);
+            logTrace(loc);
+    sendQ.push({url: "map.aspx?loc="+loc, msg: "scanning system "+loc});
+        logTrace();
+
+          });
+
+        $( document.createElement('span') )
+          .attr({id:'btnCancel', class: 'aegisToolbox-button'})
+          .html( ' Cancel ' )
+          .click( function() {
             sendQ.clear();
             $( this ).remove();
           })
@@ -1235,7 +1233,7 @@ this.ConsoleToolbox = function() {
       .attr({id:'moveScoutFrom'})
       .attr('name','moveScoutFrom')
       .attr('maxlength','12')
-      .attr('class', 'reset-this aegisLoc hasLabel')
+      .attr('class', 'reset-this inpLoc hasLabel')
       .attr("type", "text")
       .change(function() {
         GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
@@ -1253,82 +1251,122 @@ this.ConsoleToolbox = function() {
       .attr({id: 'moveScoutTo'})
       .attr('maxlength','12')
       .attr('name','moveScoutTo')
-      .attr('class','reset-this aegisLoc hasLabel')
+      .attr('class','reset-this inpLoc hasLabel')
       .attr("type", "text")
       .change(function() {
         GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
       })
       .appendTo($tbxFleet);
 
-var $devel = tbxSection('Devel                   Tab #'+getTabID());
+    var $devel = tbxSection('Devel                   Tab #'+getTabID());
+  
+    var sOff = '          Off           ';
+    var sOn = '          On            ';
+    this.isOn = function (obj) {
+      var isOff =  GM_getValue('aegis:off', 0);
+      if (isOff) {
+        obj.html(sOn);
+        return 0;
+      } else {
+        obj.html(sOff);
+        return 1;
+      }
+    }
+    this.toggleOnOff = function (obj) {
+      if (isOn(obj)) {
+          logTrace('ison');
+          GM_setValue('aegis:off', 1);
+      } else {
+          logTrace('isoff');
+          GM_setValue('aegis:off', 0);
+      }
+      isOn(obj);
+    }
+    var $onOff = $( document.createElement('div') )
+      .attr('id','btnOnOff')
+      .attr('class','aegisToolbox-button wideRight')
+      .click( function() { toggleOnOff(this); } ).appendTo( $devel );
 
-   $( document.createElement('span') )
+    isOn($onOff);
+
+    /*  kill all button
+    */
+   $( document.createElement('div') )
       .attr('id','btnClearall')
       .attr('class','aegisToolbox-button wideRight')
       .html('Clear Queues & Chains')
       .click( function () {
-          var keys = GM_listValues();
-  var key = keys[0];
-  for (var i=0; key != null; key=keys[i++] ) {
-    
-    if (key.match(/^ctxChain:/)) {
-      console.log('clearing '+key);
-      GM_deleteValue(key);
-    }
-    if (key.match(/^sendQ:/)) {
-      console.log('clearing '+key);
-      GM_deleteValue(key);
-    }
-  }
+        var keys = GM_listValues();
+        var key = keys[0];
+        for (var i=0; key != null; key=keys[i++] ) {
+
+          if (key.match(/^ctxChain:/)) {
+            console.log('clearing '+key);
+            GM_deleteValue(key);
+          }
+          if (key.match(/^sendQ:/)) {
+            console.log('clearing '+key);
+            GM_deleteValue(key);
+          }
+        }
       }).appendTo( $devel );
 
-    $( document.createElement('span') )
+    $( document.createElement('div') )
       .attr('id','btnDoIt')
       .attr('class','aegisToolbox-button wideRight')
-      .html('     Do It      ')
+      .html('          Do It           ')
       .click( function () {
         aegis['doit']();
       }).appendTo( $devel );
 
+this.labeledInput = function(ctx) {
+    var id = ctx.label.replace(/ /,"");
+    var $row = $( document.createElement('div') )
+      .attr({id: 'tbxLblInp'+id})
+      .attr('class', 'lblinp');
+
+    $( document.createElement('span') )
+      .html(ctx.label+": ")
+      .attr('class', 'aegisToolbox-label')
+      .appendTo($row);
+
     $(document.createElement('input'))
-      .attr({id: 'doit1'})
-      .attr('maxlength','2')
-      .attr('name','doit1')
-      .attr('class','reset-this aegisLoc hasLabel')
-      .attr("type", "text")
+      .attr({id: 'tbxInp'+id})
+      .attr('maxlength',ctx.maxlength)
+      .attr('name',id)
+      .attr('class','reset-this '+ctx.class)
+      .attr("type", ctx.type)
+      .attr("value", ctx.default)
       .change(function() {
         GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
       })
-      .appendTo($devel);
+      .appendTo($row);
 
-    $(document.createElement('input'))
-      .attr({id: 'doit2'})
-      .attr('maxlength','2')
-      .attr('name','doit2')
-      .attr('class','reset-this aegisLoc hasLabel')
-      .attr("type", "text")
-      .change(function() {
-        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
-      })
-      .appendTo($devel);
+      return $row;
+}
+    labeledInput({label: "Scouts",
+      class: "inpNum",
+      maxlength: 2,
+      type: "number",
+      default: 10}).appendTo($devel);
 
-    $(document.createElement('input'))
-      .attr({id: 'doit3'})
-      .attr('maxlength','2')
-      .attr('name','doit3')
-      .attr('class','reset-this aegisLoc hasLabel')
-      .attr("type", "text")
-      .change(function() {
-        GM_setValue('setting:val:'+$(this).attr('id'), $(this).val());
-      })
-      .appendTo($devel);
+    labeledInput({label: "Skip X",
+      class: "inpNum",
+      maxlength: 2,
+      type: "number",
+      default: 0}).appendTo($devel);
 
+    labeledInput({label: "Skip Y",
+      class: "inpNum",
+      maxlength: 2,
+      type: "number",
+      default: 0}).appendTo($devel);
 
-
+//Console Hook into toolbox
 
      var $tbxConsole = tbxSection('Console');
     ConsoleConsole().appendTo( $tbxConsole );
-        $tbxConsole.resizable();
+//        $tbxConsole.resizable();
 //    ConsoleConsole().appendTo( tbxSection('Console') );
 
     
@@ -1344,13 +1382,30 @@ this.ConsoleConsole = function() {
 
     $console = $(document.createElement("div"))
       .attr({id: "aegisConsole", class: 'aegisConsole'})
+      //click, no drag shoud be the event
       .mousedown( function(e) {
         $(this).data("downPos", {x:e.pageX, y:e.pageY});
       })
       .mouseup(function(e) {
         var downPos = $(this).data().downPos;
+          console.log('hi there');
         $(this).removeData("downPos");
         if (downPos.x == e.pageX && downPos.y == e.pageY) {
+          //FIXME
+          //double click
+          var data = $(this).data();
+          var then;
+          if (data != null) {
+            then = date.click.then;
+          }
+          var now = new Date();
+          console.log(now, then);
+          if (now >= (then + 5000)) {
+            $(this).data("click", {then: new Date()});
+            console.log(now, then);
+            return;
+          }
+
           // toggle console size
           var $el = $("#aegisConsole");
           var m = $el.attr('class').match(/^(.*?)(-small)?$/);
@@ -1398,8 +1453,6 @@ this.consoleMsg = function(msg, level)
 this.makeConsole = function () {
   if (!document.location.href.match(/\/(.+?).astroempires.com/)) { return; }
   logTrace();
-
-//  logTrace();
 
   var $hdr = $(document.createElement("div"))
     .attr({id: "aegisConsole-Header"})
@@ -2106,6 +2159,7 @@ function parseFleet(ctx) {
 
   //  remove the orphans before we re-populate fleets
   //
+ 
   var keys = GM_listValues();
   var key = keys[0];
   for (var i=0; key != null; key=keys[i++] ) {
@@ -2115,6 +2169,8 @@ function parseFleet(ctx) {
     }
   }
   
+//  clearMyFleet();
+    // storage for list of fleet id's per location
     var dest = {
       add: function(loc, id) {
         if (this[loc] == null) {
@@ -2123,6 +2179,8 @@ function parseFleet(ctx) {
         this[loc].push(id);
       }
     };
+    var myfleetById = [];
+    var myfleetByLoc = {};
     for (i=0; i<tr.length; i++) {
       var fleet = {};
       var td = tr[i].getElementsByTagName('td');
@@ -2151,9 +2209,14 @@ function parseFleet(ctx) {
 //    store fleet information
 //
       GM_setValue("myfleet:"+ fleet.id, JSON.stringify(fleet));
+//      myfleetById.push(fleet.id);
 
       if (fleet.location != null) {
         GM_setValue("myfleet:at:"+ fleet.location, JSON.stringify(fleet));
+        if (fleet.destination == null) {
+          //fleetByLoc only wants landed fleet
+          myfleetByLoc[fleet.location] = fleet.id;
+        }
       }
       if (fleet.destination != null) {
         dest.add(fleet.destination, fleet.id);
@@ -2165,6 +2228,10 @@ function parseFleet(ctx) {
         GM_setValue("myfleets:to:"+ i, JSON.stringify(dest[i]));
       }
     }
+    console.log(myfleetByLoc);
+//    GM_setValue("myfleetById", JSON.stringify(myfleetById));
+    GM_setValue("myfleetByLoc", JSON.stringify(myfleetByLoc));
+
     return;
   }
 
@@ -2480,7 +2547,8 @@ function parseBase(ctx) {
               if (key == "Location") {
                 baseRow['location'] = colsTD[ih - 1].textContent;
               } else if (key == "Trade Routes") {
-                baseRow['tradeRoutes'] = colsTD[ih - 1].textContent;
+                var tr = colsTD[ih - 1].textContent;
+                baseRow['tradeRoutes'] = matchFirstPos(tr,/(\d+\/\d+)/);
               }
             }
 
@@ -2493,7 +2561,8 @@ function parseBase(ctx) {
               } else if (key == "Location") {
                 baseRow['location'] = colsTD[ih].textContent;
               } else if (key == "Trade Routes") {
-                baseRow['tradeRoutes'] = colsTD[ih].textContent;
+                var tr = colsTD[ih - 1].textContent;
+                baseRow['tradeRoutes'] = matchFirstPos(tr,/(\d+\/\d+)/);
               }
             }
           }
@@ -2699,23 +2768,6 @@ function coalesceArray(a,b)
   return out;
 }
 
-function listViewableStars()
-{
-  var m2 = document.getElementById('map2_Wrapper');
-  var normal = document.getElementsByClassName('star-normal');
-  var fog = document.getElementsByClassName('star-fog');
-  console.log('current: '+unsafeWindow.starsGalaxy + ':' + unsafeWindow.mapCurrentRegion);
-  var stars = coalesceArray(normal, fog);
-
-  //    var curReg = unsafeWindow.mapCurrentRegion;
-  for (var i =0; i < stars.length; i++) {
-    console.log(i + " " + stars[i].id);
-  }
-
-  //  unsafeWindow.go2region(76);
-}
-
-
 /*  http://wiki.greasespot.net/Talk:GM_xmlhttpRequest
 */
 (function(){
@@ -2765,7 +2817,7 @@ function assert(ctx, types) {
 //  to interact with a round robin circular array of http request
 //  queues.
 //
-var sqAlarm;
+var sqAlarm = null;
 
 //  untaint a string for regex use
 //
@@ -2774,36 +2826,40 @@ RegExp.quote = function(str) {
 };
 
 function SendAE(ctx) {
-  var tag = 'sendQ:';
+  this.tabID = getTabID();
+  this.tag = 'sendQ:'+this.tabID;
+  this.tagWait = 'sendQ:waitFor:'+server;
+
+  //passed ctx.sqID for existing queue
+  //  or new q
   try {
     assertHas(ctx, {sqID: "number"});
     this.sqID = ctx.sqID;
 
   } catch(e) {
-    this.sqID = GM_getValue(tag + "newID", 0);
-    GM_setValue(tag + 'newID', this.sqID + 1);
+    this.sqID = GM_getValue(this.tag + ":newID", 0);
+    GM_setValue(this.tag + ':newID', this.sqID + 1);
 
-    logTrace('new send queue id:'+this.sqID);
+    logTrace('new send queue:'+this.sqID);
   }
-  var sendQ = this;
-  this.tag = tag + this.sqID;
+  this.tagID = this.tag + ':' + this.sqID;
   this.wait = {
     min: 500,
     max: 3000
   };
-  this.tabID = getTabID();
+  var sendQ = this;
 
   //  extra tags sent in ctx get stored
   //
   //  names in this
-  var userProps = JSON.parse(GM_getValue(this.tag + ':userProps', "[]"));
+  var userProps = JSON.parse(GM_getValue(this.tagID + ':userProps', "[]"));
   try {
-    var tag = this.tag;
+    var tag = this.tagID;
     assertHas(ctx);
 
     $.each(ctx, function(k, v) {
       if (k != 'sqID') {
-        logTrace('sqID: ',sendQ.sqID, k, v);
+        logTrace('sqID: ',sendQ.tagID, k, v);
         if ($.inArray(userProps, k) == -1 ) {
           userProps.push(k);
 
@@ -2828,7 +2884,8 @@ function SendAE(ctx) {
 
 SendAE.prototype.eachInLine = function(cb)
 {
-  var line = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  var tag = this.tag+':allQIDs';
+  var line = JSON.parse(GM_getValue(tag, "[]"));
   line.forEach(function(el) {
     var sendQ = new SendAE({sqID: el});
     cb(sendQ);
@@ -2838,18 +2895,19 @@ SendAE.prototype.eachInLine = function(cb)
 SendAE.prototype.getInLine = function()
 {
   //possible misnomer onallQIDs
-  //
-  var allQIDs = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  var tag = this.tag+':allQIDs';
+  var allQIDs = JSON.parse(GM_getValue(tag, "[]"));
   if ($.inArray(this.sqID, allQIDs) == -1) {
     allQIDs.push(this.sqID);
-    GM_setValue('sendQ:allQIDs', JSON.stringify(allQIDs));
+    GM_setValue(tag, JSON.stringify(allQIDs));
   }
 
 }
 SendAE.prototype.leaveLine = function()
 {
   logTrace();
-  var allQIDs = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  var tag = this.tag+':allQIDs';
+  var allQIDs = JSON.parse(GM_getValue(tag, "[]"));
   var sqID = this.sqID;
 //  logTrace(allQIDs, this.sqID);
 
@@ -2859,7 +2917,7 @@ SendAE.prototype.leaveLine = function()
 
 //  logTrace(allQIDs, this.sqID);
 
-  GM_setValue('sendQ:allQIDs', JSON.stringify(allQIDs) );
+  GM_setValue(tag, JSON.stringify(allQIDs) );
 }
 
 // on empty list, return self.sqID so always returns actual next in line
@@ -2867,11 +2925,12 @@ SendAE.prototype.leaveLine = function()
 SendAE.prototype.nextInLine = function()
 {
   //  keep it circular
-  var allQIDs = JSON.parse(GM_getValue('sendQ:allQIDs', "[]"));
+  var tag = this.tag+':allQIDs';
+  var allQIDs = JSON.parse(GM_getValue(tag, "[]"));
   var next = allQIDs.shift();
   if (typeof next !== "undefined") {
     allQIDs.push(next);
-    GM_setValue('sendQ:allQIDs', JSON.stringify(allQIDs));
+    GM_setValue(tag, JSON.stringify(allQIDs));
   } else {
     next = this.sqID;
   }
@@ -2879,8 +2938,12 @@ SendAE.prototype.nextInLine = function()
   return next;
 }
 
-//set a wait time in the future unless it already is
-//  return ms from now
+//  either return milliseconds from now to wait until the server based 
+//  waitFor time will be reached (then canSend = true)
+//
+//  or if server:waitFor time is in the past, 
+//  set a wait time to specified milliseconds in the future
+//  or a random time if no param
 //
 SendAE.prototype.setWait = function(ms)
 {
@@ -2896,17 +2959,17 @@ SendAE.prototype.setWait = function(ms)
   }
 
   var mNow = moment();
-  var mWaitFor = moment(GM_getValue('sendQ:waitFor', (new Date().getTime() + waitMS)));
+  var mWaitFor = moment(GM_getValue(this.tagWait, (new Date().getTime() + waitMS)));
   if (mNow.isAfter(mWaitFor))
     mWaitFor = mNow.clone().add(waitMS, 'ms');
 
-  GM_setValue('sendQ:waitFor', mWaitFor.valueOf());
+  GM_setValue(this.tagWait, mWaitFor.valueOf());
   /*
   logTrace({now: mNow.format('HH:mm:ss.SSS'),
     waitFor: mWaitFor.format('HH:mm:ss.SSS')});
 */
 
-  return (mWaitFor.valueOf() - mNow.valueOf());
+  return (mWaitFor.valueOf() - mNow.valueOf() + 50);
 }
 
 //  re-set waitFor based on new ms, or current sendQ:waitFor
@@ -2914,18 +2977,21 @@ SendAE.prototype.setWait = function(ms)
 SendAE.prototype.waitFor = function(ms)
 {
 //  logTrace();
+/*
   window.clearTimeout(sqAlarm);
+*/
 
   var waitMS = this.setWait(ms);
-  logTrace('setting alarm '+waitMS);
 
-  if (!this.allAreEmpty()) {
+  if (!this.allAreEmpty() && sqAlarm == null) {
+    logTrace('setting alarm '+waitMS);
     //call again after wait time
-    sqAlarm = window.setTimeout( 
+    sqAlarm = window.setTimeout(
       (function (q) {
         return function() { 
-        logTrace('alarm went off');
+          logTrace('alarm went off');
           q.send(); 
+          sqAlarm = null;
         };
       })(this), waitMS);
   }
@@ -2933,15 +2999,12 @@ SendAE.prototype.waitFor = function(ms)
 
 SendAE.prototype.canSend = function()
 {
-
   if ((new Date().getTime())
-      > parseInt(GM_getValue("sendQ:waitFor", 0)))
+      > parseInt(GM_getValue(this.tagWait, 0)))
     return true;
 
   return false;
 }
-
-
 
 //  send from whichever queue is next up in line
 //
@@ -2958,12 +3021,11 @@ SendAE.prototype.send = function()
     nextID = this.nextInLine();
     sendQ = new SendAE({sqID: nextID});
     ctx = sendQ.shift();
-    logTrace(sendQ.sqID);
+    logTrace(sendQ.tagID);
   }
 
-  logTrace(sendQ.sqID, 'sending a :', ctx);
+  logTrace(sendQ.tagID, 'sending a :', ctx);
 
-  //    GM_deleteValue('sendQ:waitFor');
   if (ctx == null) {
     throw new Error("sendQ "+nextID+"empty on send!");
   }
@@ -2989,8 +3051,8 @@ SendAE.prototype.send = function()
       console.log("onerror :"+response);
     },
     onload: function(resp) {
-      logTrace('send:onload, sqID:'+sendQ.sqID);
-      var tag = sendQ.tag;
+      logTrace('send:onload, sqID:'+sendQ.tagID);
+      var tag = sendQ.tagID;
       pending = GM_getValue(tag+':pending',0);
       GM_setValue(tag+':pending', --pending);
 
@@ -3010,7 +3072,7 @@ SendAE.prototype.send = function()
       //  this q is done barring a lazy reference
       //
       if (sendQ.isEmpty() && !sendQ.hasPending()) {
-        logTrace(sendQ.sqID);
+        logTrace(sendQ.tagID);
 
         if (tryAssertHas(sendQ, {chainID: "number"})) {
           logTrace('yey chain!');
@@ -3027,7 +3089,7 @@ SendAE.prototype.send = function()
             document.title = ">" + document.title;
           }
         } else {
-          logTrace(sendQ.sqID);
+          logTrace(sendQ.tagID);
           consoleMsg("done", "infoMsg");
         }
       } else {
@@ -3038,9 +3100,9 @@ SendAE.prototype.send = function()
         logTrace();
         $('#btnSendQCancel').hide();
 
-        GM_deleteValue('sendQ:waitFor');
+        GM_deleteValue(sendQ.tagWait);
       } else {
-        logTrace('sqid:'+sendQ.sqID);
+        logTrace('sqid:'+sendQ.tagID);
         sendQ.waitFor(100);
       }
 
@@ -3064,15 +3126,13 @@ SendAE.prototype.push = function(ctx)
     ctx.onload = "ctxDispatchResponse";
   }
 
-  var tag = this.tag,
-      sqID = this.sqID;
+  var tag = this.tagID;
 
   var tail = GM_getValue(tag+':tail',0);
 
   logTrace(tag,'t:',tail,ctx);
 
   GM_setValue(tag +':ctx:'+tail, JSON.stringify(ctx));
-
   GM_setValue(tag+':tail',++tail);
 
   //  shake shake shake senora
@@ -3085,8 +3145,7 @@ SendAE.prototype.push = function(ctx)
 SendAE.prototype.shift = function()
 {
   logTrace(); 
-  var tag = this.tag,
-      sqID = this.sqID;
+  var tag = this.tagID;
 
   logTrace(tag); 
   var head = GM_getValue(tag+':head',0);
@@ -3119,10 +3178,10 @@ SendAE.prototype.shift = function()
   if (head == tail) {
     GM_setValue(tag+':tail',0);
     GM_setValue(tag+':head',0);
-    logTrace(this.tag);
+    logTrace(this.tagID);
 
     this.leaveLine();
-    logTrace(this.tag);
+    logTrace(this.tagID);
   }
 
   return ctx;
@@ -3134,8 +3193,8 @@ SendAE.prototype.clearAll = function()
 {
   this.eachInLine(function(q) { q.clear(); });
 
-  GM_deleteValue('sendQ:waitFor');
-  GM_deleteValue('sendQ:newID');
+  GM_deleteValue(this.tagWait);
+  GM_deleteValue(this.tag + ':newID');
   if (sqAlarm) {
     window.clearTimeout(sqAlarm);
   }
@@ -3143,7 +3202,7 @@ SendAE.prototype.clearAll = function()
 }
 SendAE.prototype.clear = function()
 {
-  var tag = this.tag;
+  var tag = this.tagID;
   var head = GM_getValue(tag+':head',0);
   var tail = GM_getValue(tag+':tail',0);
   for (var i = head; i <= tail; i++) {
@@ -3163,8 +3222,9 @@ SendAE.prototype.clear = function()
 }
 SendAE.prototype.length = function ()
 {
-  var head = GM_getValue(this.tag+':head',0);
-  var tail = GM_getValue(this.tag+':tail',0);
+  var tag = this.tagID;
+  var head = GM_getValue(tag+':head',0);
+  var tail = GM_getValue(tag+':tail',0);
   return (tail - head);
 }
 SendAE.prototype.isEmpty = function ()
@@ -3188,7 +3248,7 @@ SendAE.prototype.allAreEmpty = function()
 }
 SendAE.prototype.hasPending = function()
 {
-  var tag = this.tag;
+  var tag = this.tagID;
   var pending = GM_getValue(tag+':pending',pending, 0);
   if (pending > 0) {
     return true;
@@ -3352,6 +3412,8 @@ function dispatch(ctx) {
   if (typeof ctx.sendQ === "undefined")
     ctx.sendQ = new SendAE();
 
+  //  perhaps user refreshed page
+  //
   if (!ctx.sendQ.allAreEmpty()) 
     ctx.sendQ.waitFor();
 
@@ -3521,7 +3583,13 @@ this.doit = function() {
   if (m.length) {
     ctxSendToServer({data:
       {func:"scoutGalaxy", 
-        ctx: {galaxy: m[0], scouts: 10, skipX: 0, skipY: 1, start: $("#moveScoutFrom").val()}
+        ctx: {
+          galaxy: m[0], 
+          scouts:  $("#tbxInpScouts").val(), 
+          skipX:  $("#tbxInpSkipX").val(), 
+          skipY:  $("#tbxInpSkipY").val(), 
+          start: $("#moveScoutFrom").val()
+        }
       },
       route:aegisURLquery, ondispatch:"ctxQueryResponse"}); 
   } else {
@@ -3655,9 +3723,18 @@ this.randomAstro = function(ctx)
 
 $(document).ready(function() {
 
+  makeConsole();
+
+  $("#fleets-list").attr("width", 1000);
+
+aegis['off'] = GM_getValue('aegis:off', 0);
+if (aegis['off']) {
+  logTrace('Aegis is off');
+  throw new Error("User hit the off button");
+}
+
   checkForUpdate();
   checkSendBufferCache();
-  makeConsole();
   /*
   $(document.createElement("div"))
     .attr({id: "test"})
@@ -3668,7 +3745,7 @@ $(document).ready(function() {
   */
   dispatch({url: document.URL, doc: document, follow: "none"});
 
-  log('load');
+//  log('load');
   
 //  randomAstro({randomAstro: "B39:55"});
 

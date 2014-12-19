@@ -149,6 +149,14 @@ sub dbic {
       #
       foreach my $row ($rs->page($opt{page})->all) {
         my %inflated = $row->get_inflated_columns;
+
+        #  idk why inflation would overwrite a value..
+        #
+        while (my ($k, $v) = each %inflated) {
+          if (!defined $v) {
+            $inflated{$k} = $row->get_column($k);
+          }
+        }
         push @data, [ map { $inflated{$_} } @headers ];
       }
 

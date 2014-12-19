@@ -10,16 +10,15 @@
 
   <div class="panel">
 
-% my ($d, $defaultServer, @dbic, @servers, @procs);
+% my ($d, $defaultServer, @servers, @procs);
 % if (my $playerID = session 'playerID') {
-% if (my $dbic = session 'dbic') { @dbic = @$dbic; }
-% if (my $procs = session 'newprocs') { @procs = @$procs; }
+% if (my $dbic = session 'dbic') { @procs= @$dbic; }
 % if (my $servers = session 'servers') { @servers = @$servers; }
 % foreach my $view (@procs) {
 %   my $v = $view;
 %   $view =~ s/([A-Z])/ $1/g;
   <span class="pbutton">
-  <a href='<%= url_for("/ae/gis/displayProc/$v") %>'><%= $view %></a>
+  <a href='<%= url_for("/ae/gis/data/$v") %>'><%= $view %></a>
   </span>
 % }
     <a id="go" name="logout" href="/ae/logout">Logout</a>

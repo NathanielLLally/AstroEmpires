@@ -24,6 +24,6 @@ my $dbh = $sb->dbh('bravo');
 $dbh->do('drop database aeServer');
 $sb->app->log->debug("dropping aeServer");
 
-foreach my $db (qw/aeServer aePegasus aeDelta aeAndromeda/) {
+foreach my $db (qw/aeServer aeCentauri/) {
   $sb->createOrUpdateDatabase($db);
 }
